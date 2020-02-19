@@ -13,7 +13,7 @@ defmodule Snowflex.Application do
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: SnowflakeClient.Supervisor]
+    opts = [strategy: :one_for_one, name: SnowflexClient.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
@@ -24,7 +24,7 @@ defmodule Snowflex.Application do
 
     [
       {:name, {:local, :snowflake_pool}},
-      {:worker_module, Application.get_env(:snowflex, :worker, SnowflakeClient.Worker)},
+      {:worker_module, Application.get_env(:snowflex, :worker, SnowflexClient.Worker)},
       {:size, pool_config[:pool_size]},
       {:max_overflow, pool_config[:overflow]}
     ]
