@@ -23,7 +23,7 @@ defmodule Snowflex.Application do
     pool_config = Application.get_env(:snowflex, :pool)
 
     [
-      {:name, {:local, :snowflake_pool}},
+      {:name, {:local, :snowflex_pool}},
       {:worker_module, Application.get_env(:snowflex, :worker, Snowflex.Worker)},
       {:size, pool_config[:pool_size]},
       {:max_overflow, pool_config[:overflow]}

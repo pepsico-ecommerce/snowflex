@@ -16,7 +16,7 @@ defmodule Snowflex do
   @spec sql_query(String.t()) :: sql_data()
   def sql_query(query) do
     case :poolboy.transaction(
-           :snowflake_pool,
+           :snowflex_pool,
            fn pid -> Worker.sql_query(pid, query) end,
            @timeout
          ) do
@@ -28,7 +28,7 @@ defmodule Snowflex do
   @spec param_query(String.t(), list(query_param())) :: sql_data()
   def param_query(query, params \\ []) do
     case :poolboy.transaction(
-           :snowflake_pool,
+           :snowflex_pool,
            fn pid -> Worker.param_query(pid, query, params) end,
            @timeout
          ) do
