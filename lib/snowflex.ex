@@ -13,24 +13,24 @@ defmodule Snowflex do
   @type query_param :: {:odbc.odbc_data_type(), list(:odbc.value())}
   @type sql_data :: list(%{optional(String.t()) => String.t()})
 
-  @spec sql_query(String.t()) :: sql_data()
-  def sql_query(query) do
+  @spec sql_query(String.t(), integer() | :infinity) :: sql_data()
+  def sql_query(query, timeout \\ @timeout) do
     case :poolboy.transaction(
            :snowflex_pool,
-           fn pid -> Worker.sql_query(pid, query) end,
-           @timeout
+           fn pid -> Worker.sql_query(pid, query, timeout) end,
+           timeout
          ) do
       {:ok, results} -> process_results(results)
       err -> err
     end
   end
 
-  @spec param_query(String.t(), list(query_param())) :: sql_data()
-  def param_query(query, params \\ []) do
+  @spec param_query(String.t(), list(query_param()), integer() | :infinity) :: sql_data()
+  def param_query(query, params \\ [], timeout \\ @timeout) do
     case :poolboy.transaction(
            :snowflex_pool,
-           fn pid -> Worker.param_query(pid, query, params) end,
-           @timeout
+           fn pid -> Worker.param_query(pid, query, params, timeout) end,
+           timeout
          ) do
       {:ok, results} -> process_results(results)
       err -> err
