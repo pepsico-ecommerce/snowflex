@@ -11,12 +11,12 @@ defmodule Snowflex.Worker do
     GenServer.start_link(__MODULE__, nil, [])
   end
 
-  def sql_query(pid, query) do
-    GenServer.call(pid, {:sql_query, query}, @timeout)
+  def sql_query(pid, query, timeout \\ @timeout) do
+    GenServer.call(pid, {:sql_query, query}, timeout)
   end
 
-  def param_query(pid, query, params) do
-    GenServer.call(pid, {:param_query, query, params}, @timeout)
+  def param_query(pid, query, params, timeout \\ @timeout) do
+    GenServer.call(pid, {:param_query, query, params}, timeout)
   end
 
   ## GENSERVER CALL BACKS
