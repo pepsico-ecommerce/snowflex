@@ -1,4 +1,4 @@
-defmodule Snowflake.ConnectionPool do
+defmodule Snowflex.ConnectionPool do
   @moduledoc """
 
   ```
@@ -9,7 +9,7 @@ defmodule Snowflake.ConnectionPool do
       warehouse: "CUSTOMER_DEV_WH"
     ]
   ]
-  {Snowflake.ConnectionPool}
+  {Snowflex.ConnectionPool, data_warehouse}
   ```
 
   This is a contrived example. In production scenarios, you most likely want to
@@ -118,13 +118,12 @@ defmodule Snowflake.ConnectionPool do
 
   def child_spec(config) do
     name = Keyword.fetch!(config, :name)
-
+    connection = Keyword.get(config, :connection)
     user_size_config = Keyword.get(config, :size, [])
     final_size_config = Keyword.merge(@default_size, user_size_config)
 
     min_pool_size = Keyword.get(final_size_config, :min)
     max_pool_size = Keyword.get(final_size_config, :max)
-
 
     opts = [
       {:name, {:local, name}},
@@ -133,6 +132,6 @@ defmodule Snowflake.ConnectionPool do
       {:max_overflow, min_pool_size}
     ]
 
-    :poolboy.child_spec(:worker, opts)
+    :poolboy.child_spec(name, opts, connection)
   end
 end

@@ -29,15 +29,15 @@ defmodule Snowflex.Query do
   def int_param(val), do: {:sql_integer, val}
   def string_param(val, length \\ 250), do: {{:sql_varchar, length}, val}
 
-  def sql_query(query, post_process \\ fn x -> x end) do
-    case Snowflex.sql_query(query) do
+  def sql_query(pool_name, query, post_process \\ fn x -> x end) do
+    case Snowflex.sql_query(pool_name, query) do
       {:error, err} -> {:error, err}
       results -> results |> post_process.()
     end
   end
 
-  def param_query(query, params, post_process \\ fn x -> x end) do
-    case Snowflex.param_query(query, params) do
+  def param_query(pool_name, query, params, post_process \\ fn x -> x end) do
+    case Snowflex.param_query(pool_name, query, params) do
       {:error, err} -> {:error, err}
       results -> results |> post_process.()
     end
