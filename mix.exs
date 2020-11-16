@@ -17,8 +17,10 @@ defmodule Snowflex.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: extra_apps(Mix.env()),
-      mod: {Snowflex.Application, []}
+      extra_applications: [:logger, :odbc],
+      env: [
+        driver: "/usr/lib/snowflake/odbc/lib/libSnowflake.so"
+      ]
     ]
   end
 
@@ -37,7 +39,6 @@ defmodule Snowflex.MixProject do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:poolboy, "~> 1.5.1"},
@@ -45,19 +46,5 @@ defmodule Snowflex.MixProject do
       {:ecto, "~> 3.0"},
       {:ex_doc, "~> 0.21", only: :dev, runtime: false}
     ]
-  end
-
-  defp extra_apps(:prod) do
-    [:logger, :odbc]
-  end
-
-  # credo:disable-for-lines:8
-  defp extra_apps(_) do
-    try do
-      :odbc.module_info()
-      [:logger, :odbc]
-    rescue
-      _e in UndefinedFunctionError -> [:logger]
-    end
   end
 end
