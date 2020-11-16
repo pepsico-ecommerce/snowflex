@@ -4,46 +4,84 @@
 
 This application encapsulates an ODBC connection pool for connecting to the Snowflake data warehouse.
 
-The following config options need to be set:
+## Usage
+
+The following config options can be set:
 
 ```elixir
-config :snowflex, :connection,
-       driver: <path to driver library>,
-       server: <URL to server>,
-       uid: <user id>,
-       pwd: <password>,
-       role: <Snowflake role>,
-       warehouse:  <Snowflake warehouse>
-
-config :snowflex, :pool,
-  pool_size: <pool size to pass to poolboy>,
-  overflow: <pool overflow to pass to poolboy>
-
-config :snowflex, worker: Snowflex.MockWorker
+config :snowflex,
+  driver: "/path/to/my/ODBC/driver" # defaults to "/usr/lib/snowflake/odbc/lib/libSnowflake.so")
+  worker: MyApp.MockWorker # defaults to Snowflex.Worker (change for testing/development)
 ```
 
-The last line is optional and designed to use in test/production. It returns canned data and does
-not connect to the data warehouse. If you want to connect to this real warehouse, omit this line
-or set it to `Snowflex.Worker`
+Connection pools are not automatically started for you. You will need to establish each connection pool in your application module. Example configuration:
 
-NOTE: If you are planning to connect to the Snowflake warehouse, your local Erlang instance
+```elixir
+import Config
+
+# ...
+
+config :my_app, :data_warehouses,
+  point_of_sale: [
+    name: :point_of_sale,
+    connection: [
+      role: "PROD",
+      warehouse: System.get_env("SNOWFLAKE_POS_WH"),
+      uid: System.get_env("SNOWFLAKE_POS_UID"),
+      pwd: System.get_env("SNOWFLAKE_POS_PWD")
+    ]
+  ],
+  advertising: [
+    name: :advertising,
+    connection: [
+      role: "PROD",
+      warehouse: System.get_env("SNOWFLAKE_ADVERTISING_WH"),
+      uid: System.get_env("SNOWFLAKE_ADVERTISING_UID"),
+      pwd: System.get_env("SNOWFLAKE_ADVERTISING_PWD")
+    ]
+  ]
+```
+
+Then, in your application module, you would source the configuration like this:
+
+```elixir
+def MyApp.Application do
+  use Application
+
+  def start(_type, _args) do
+
+    warehouses = Application.get_env(:myapp, :data_warehouses)
+    pos = Keyword.get(warehouses, :point_of_sale)
+    advertising = Keyword.get(warehouses, :advertising)
+
+    children = [
+      {Snowflex.ConnectionPool, pos},
+      {Snowflex.ConnectionPool, advertising}
+    ]
+
+    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
+end
+```
+
+This setup allows us to support multiple connection pools to different warehouses.
+
+## Caveats
+
+If you are planning to connect to the Snowflake warehouse, your local Erlang instance
 must have ODBC enabled. The erlang installed by Homebrew does NOT have ODBC support. The `asdf`
 version of erlang does have ODBC support. You will also need the Snowflake ODBC driver installed
 on your machine. You can download this from https://sfc-repo.snowflakecomputing.com/odbc/index.html.
 
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `snowflex` to your list of dependencies in `mix.exs`:
+The package can be installed by adding `snowflex` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:snowflex, "~> 0.0.3"}
+    {:snowflex, "~> 0.1.0"}
   ]
 end
 ```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/snowflex](https://hexdocs.pm/snowflex).

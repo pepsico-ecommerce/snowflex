@@ -7,8 +7,8 @@ defmodule Snowflex.Worker do
   @timeout :timer.seconds(60)
   @string_types [:sql_char, :sql_wchar, :sql_varchar, :sql_wvarchar, :sql_wlongvarchar]
 
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, [])
+  def start_link(connection_args) do
+    GenServer.start_link(__MODULE__, connection_args, [])
   end
 
   def sql_query(pid, query, timeout \\ @timeout) do
@@ -20,8 +20,8 @@ defmodule Snowflex.Worker do
   end
 
   ## GENSERVER CALL BACKS
-  def init(_) do
-    send(self(), :start)
+  def init(connection_args) do
+    send(self(), {:start, connection_args})
     {:ok, %{backoff: :backoff.init(2, 60), state: :not_connected}}
   end
 
@@ -58,10 +58,8 @@ defmodule Snowflex.Worker do
     end
   end
 
-  def handle_info(:start, %{backoff: backoff}) do
-    conn_str =
-      connection_string()
-      |> to_charlist()
+  def handle_info({:start, connection_args}, %{backoff: backoff}) do
+    conn_str = connection_string(connection_args)
 
     case :odbc.connect(conn_str, []) do
       {:ok, pid} ->
@@ -77,12 +75,13 @@ defmodule Snowflex.Worker do
 
   # Helpers
 
-  defp connection_string do
-    params = Application.get_env(:snowflex, :connection)
+  defp connection_string(connection_args) do
+    driver = Application.get_env(:snowflex, :driver)
+    connection_args = [{:driver, driver} | connection_args]
 
-    Enum.reduce(params, "", fn {key, value}, acc ->
-      acc <> "#{key}=#{value};"
-    end)
+    connection_args
+    |> Enum.reduce("", fn {key, value}, acc -> acc <> "#{key}=#{value};" end)
+    |> to_charlist()
   end
 
   defp prepare_params(params) do
