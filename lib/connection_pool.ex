@@ -116,6 +116,7 @@ defmodule Snowflex.ConnectionPool do
     min: 5
   ]
 
+  @spec child_spec(keyword) :: :poolboy.child_spec()
   def child_spec(config) do
     name = Keyword.fetch!(config, :name)
     connection = Keyword.get(config, :connection)
