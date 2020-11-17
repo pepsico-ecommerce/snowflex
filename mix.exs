@@ -4,7 +4,7 @@ defmodule Snowflex.MixProject do
   def project do
     [
       app: :snowflex,
-      version: "0.1.0",
+      version: "0.1.1",
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -33,7 +33,7 @@ defmodule Snowflex.MixProject do
   defp package do
     [
       # These are the default files included in the package
-      files: ~w(lib .formatter.exs mix.exs README* LICENSE*),
+      files: ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG*),
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => "https://github.com/pepsico-ecommerce/snowflex"}
     ]

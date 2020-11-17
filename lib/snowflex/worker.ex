@@ -20,11 +20,14 @@ defmodule Snowflex.Worker do
   end
 
   ## GENSERVER CALL BACKS
+
+  @impl GenServer
   def init(connection_args) do
     send(self(), {:start, connection_args})
     {:ok, %{backoff: :backoff.init(2, 60), state: :not_connected}}
   end
 
+  @impl GenServer
   def handle_call({:sql_query, _query}, _from, state = %{state: :not_connected}) do
     {:reply, {:err, :not_connected}, state}
   end
@@ -58,6 +61,7 @@ defmodule Snowflex.Worker do
     end
   end
 
+  @impl GenServer
   def handle_info({:start, connection_args}, %{backoff: backoff}) do
     conn_str = connection_string(connection_args)
 
