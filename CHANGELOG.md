@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- *Breaking* Users must launch connection pools as part of their application's
+- Configure the worker module on the `Snowflex.ConnectionPool`
+
+- _Breaking_ Users must launch connection pools as part of their application's
   supervision tree using `Snowflex.ConnectionPool`, and all queries must specify
   which connection pool to use. No connection pool will be started by default.

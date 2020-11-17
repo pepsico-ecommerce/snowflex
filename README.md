@@ -11,7 +11,6 @@ The following config options can be set:
 ```elixir
 config :snowflex,
   driver: "/path/to/my/ODBC/driver" # defaults to "/usr/lib/snowflake/odbc/lib/libSnowflake.so")
-  worker: MyApp.MockWorker # defaults to Snowflex.Worker (change for testing/development)
 ```
 
 Connection pools are not automatically started for you. You will need to establish each connection pool in your application module. Example configuration:
@@ -33,6 +32,7 @@ config :my_app, :data_warehouses,
   ],
   advertising: [
     name: :advertising,
+    worker_module: MyApp.MockWorker # defaults to Snowflex.Worker (change for testing/development)
     connection: [
       role: "PROD",
       warehouse: System.get_env("SNOWFLAKE_ADVERTISING_WH"),
@@ -81,7 +81,7 @@ The package can be installed by adding `snowflex` to your list of dependencies i
 ```elixir
 def deps do
   [
-    {:snowflex, "~> 0.1.0"}
+    {:snowflex, "~> 0.1.1"}
   ]
 end
 ```

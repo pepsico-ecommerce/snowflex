@@ -72,6 +72,10 @@ defmodule Snowflex.ConnectionPool do
 
   The `:name` of the connection pool must be an atom.
 
+  ## Worker Module
+
+  The `:worker_module` configuration is used to specifiy a different worker for the pool. We recommend this be used to setup a mock worker for testing/development.
+
   ## Connection
 
   The `:connection` configuration contains details on how to connect to
@@ -125,10 +129,11 @@ defmodule Snowflex.ConnectionPool do
 
     min_pool_size = Keyword.get(final_size_config, :min)
     max_pool_size = Keyword.get(final_size_config, :max)
+    worker_module = Keyword.get(config, :worker_module, Snowflex.Worker)
 
     opts = [
       {:name, {:local, name}},
-      {:worker_module, Application.get_env(:snowflex, :worker, Snowflex.Worker)},
+      {:worker_module, worker_module},
       {:size, max_pool_size},
       {:max_overflow, min_pool_size}
     ]
