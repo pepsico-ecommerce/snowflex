@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2020-11-17
+
 ### Changed
 
-- Configure the worker module on the `Snowflex.ConnectionPool`
+- Configure the worker module on the `Snowflex.ConnectionPool` and no longer on the application level.
 
-- _Breaking_ Users must launch connection pools as part of their application's
+## [0.1.0] - 2020-11-16
+
+### Breaking
+
+- Users must launch connection pools as part of their application's
   supervision tree using `Snowflex.ConnectionPool`, and all queries must specify
   which connection pool to use. No connection pool will be started by default.
