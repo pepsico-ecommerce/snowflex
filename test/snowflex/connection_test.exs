@@ -3,8 +3,7 @@ defmodule Snowflex.ConnectionTest do
 
   defmodule SnowflakeConnection do
     use Snowflex.Connection,
-      otp_app: :snowflex,
-      name: :connection
+      otp_app: :snowflex
   end
 
   defmodule MockWorker do

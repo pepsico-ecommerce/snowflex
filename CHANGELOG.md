@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Added
+
+- Added the ability to define a module that will use `Snowflex.Connection` to maintain connection information
+
+## Breaking
+
+- Remove `Snowflex.Query` as it was a duplicate
+
 ## [0.1.1] - 2020-11-17
 
 ### Changed

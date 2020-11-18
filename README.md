@@ -4,45 +4,53 @@
 
 This application encapsulates an ODBC connection pool for connecting to the Snowflake data warehouse.
 
-## Usage
+## Setup
 
 The following config options can be set:
 
 ```elixir
 config :snowflex,
-  driver: "/path/to/my/ODBC/driver" # defaults to "/usr/lib/snowflake/odbc/lib/libSnowflake.so")
+  driver: "/path/to/my/ODBC/driver" # defaults to "/usr/lib/snowflake/odbc/lib/libSnowflake.so"
 ```
 
-Connection pools are not automatically started for you. You will need to establish each connection pool in your application module. Example configuration:
+Connection pools are not automatically started for you. You will need to define and establish each connection pool in your application module.
+
+First, create a module to hold your connection information:
+
+```elixir
+defmodule MyApp.SnowflakeConnection do
+  use Snowflex.Connection,
+    otp_app: :my_app
+end
+```
+
+Define your configuration:
 
 ```elixir
 import Config
 
 # ...
 
-config :my_app, :data_warehouses,
-  point_of_sale: [
-    name: :point_of_sale,
-    connection: [
+config :my_app, MyApp.SnowflakeConnection,
+  connection: [
       role: "PROD",
       warehouse: System.get_env("SNOWFLAKE_POS_WH"),
       uid: System.get_env("SNOWFLAKE_POS_UID"),
       pwd: System.get_env("SNOWFLAKE_POS_PWD")
     ]
-  ],
-  advertising: [
-    name: :advertising,
-    worker_module: MyApp.MockWorker # defaults to Snowflex.Worker (change for testing/development)
+
+ # you may define multiple connection modules
+ config :my_app, MyApp.MyOtherSnowflakeConnection,
+    worker: MyApp.MockWorker # defaults to Snowflex.Worker (change for testing/development)
     connection: [
       role: "PROD",
       warehouse: System.get_env("SNOWFLAKE_ADVERTISING_WH"),
       uid: System.get_env("SNOWFLAKE_ADVERTISING_UID"),
       pwd: System.get_env("SNOWFLAKE_ADVERTISING_PWD")
     ]
-  ]
 ```
 
-Then, in your application module, you would source the configuration like this:
+Then, in your application module, you would start your connection:
 
 ```elixir
 def MyApp.Application do
@@ -50,13 +58,9 @@ def MyApp.Application do
 
   def start(_type, _args) do
 
-    warehouses = Application.get_env(:myapp, :data_warehouses)
-    pos = Keyword.get(warehouses, :point_of_sale)
-    advertising = Keyword.get(warehouses, :advertising)
-
     children = [
-      {Snowflex.ConnectionPool, pos},
-      {Snowflex.ConnectionPool, advertising}
+      MyApp.SnowflakeConnection,
+      MyApp.MyOtherSnowflakeConnection
     ]
 
     opts = [strategy: :one_for_one, name: MyApp.Supervisor]
@@ -64,8 +68,6 @@ def MyApp.Application do
   end
 end
 ```
-
-This setup allows us to support multiple connection pools to different warehouses.
 
 ## Caveats
 
@@ -81,7 +83,7 @@ The package can be installed by adding `snowflex` to your list of dependencies i
 ```elixir
 def deps do
   [
-    {:snowflex, "~> 0.1.1"}
+    {:snowflex, "~> 0.2.0"}
   ]
 end
 ```

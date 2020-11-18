@@ -4,13 +4,12 @@ defmodule Snowflex.Connection do
 
   ## Definition
 
-  When used, the connection expects the `:otp_app` and `:name` options. You may also define a standard timeout. This will default to 60 seconds.
+  When used, the connection expects the `:otp_app` option. You may also define a standard timeout. This will default to 60 seconds.
 
   ```
   defmodule SnowflakeConnection do
     use Snowflex.Connection,
       otp_app: :my_app,
-      name: :connection,
       timeout: :timer.seconds(60)
   end
   ```
@@ -84,11 +83,10 @@ defmodule Snowflex.Connection do
     quote bind_quoted: [opts: opts] do
       # setup compile time config
       otp_app = Keyword.fetch!(opts, :otp_app)
-      name = Keyword.fetch!(opts, :name)
       timeout = Keyword.get(opts, :timeout, :timer.seconds(60))
 
       @otp_app otp_app
-      @name name
+      @name __MODULE__
       @timeout timeout
       @default_size [
         max: 10,
