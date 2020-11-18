@@ -23,3 +23,5 @@ erl_crash.dump
 snowflex-*.tar
 
 .elixir_ls
+
+/config/*.secret.exs

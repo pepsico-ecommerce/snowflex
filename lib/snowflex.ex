@@ -1,6 +1,4 @@
 defmodule Snowflex do
-  alias Snowflex.Worker
-
   @moduledoc """
   The client interface for connecting to the Snowflake data warehouse.
 
@@ -8,17 +6,18 @@ defmodule Snowflex do
   a SQL query and returns a list of maps (one per row). NOTE: due to the way the Erlang ODBC works, all values comeback
   as strings. You will need to cast values appropriately.
   """
+  alias Ecto.Changeset
+  alias Snowflex.Worker
 
-  @timeout :timer.seconds(60)
   @type query_param :: {:odbc.odbc_data_type(), list(:odbc.value())}
   @type sql_data :: list(%{optional(String.t()) => String.t()})
 
-  @spec sql_query(atom(), String.t(), non_neg_integer() | :infinity) ::
+  @spec sql_query(atom(), String.t(), timeout()) ::
           sql_data() | {:error, term}
-  def sql_query(pool_name, query, timeout \\ @timeout) do
+  def sql_query(pool_name, query, timeout) do
     case :poolboy.transaction(
            pool_name,
-           fn pid -> Worker.sql_query(pid, query, timeout) end,
+           &Worker.sql_query(&1, query, timeout),
            timeout
          ) do
       {:ok, results} -> process_results(results)
@@ -26,18 +25,25 @@ defmodule Snowflex do
     end
   end
 
-  @spec param_query(atom(), String.t(), list(query_param()), non_neg_integer() | :infinity) ::
+  @spec param_query(atom(), String.t(), list(query_param()), timeout()) ::
           sql_data() | {:error, term}
-  def param_query(pool_name, query, params \\ [], timeout \\ @timeout) do
+  def param_query(pool_name, query, params \\ [], timeout) do
     case :poolboy.transaction(
            pool_name,
-           fn pid -> Worker.param_query(pid, query, params, timeout) end,
+           &Worker.param_query(&1, query, params, timeout),
            timeout
          ) do
       {:ok, results} -> process_results(results)
       err -> err
     end
   end
+
+  def cast_results(data, schema) do
+    Enum.map(data, &cast_row(&1, schema))
+  end
+
+  def int_param(val), do: {:sql_integer, val}
+  def string_param(val, length \\ 250), do: {{:sql_varchar, length}, val}
 
   # Helpers
 
@@ -65,4 +71,11 @@ defmodule Snowflex do
 
   defp to_string_if_charlist(data) when is_list(data), do: to_string(data)
   defp to_string_if_charlist(data), do: data
+
+  defp cast_row(row, schema) do
+    schema
+    |> struct()
+    |> Changeset.cast(row, schema.__schema__(:fields))
+    |> Changeset.apply_changes()
+  end
 end
