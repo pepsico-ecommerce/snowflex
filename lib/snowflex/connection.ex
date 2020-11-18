@@ -81,6 +81,8 @@ defmodule Snowflex.Connection do
   @doc false
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do
+      @behaviour Snowflex.Connection
+
       # setup compile time config
       otp_app = Keyword.fetch!(opts, :otp_app)
       timeout = Keyword.get(opts, :timeout, :timer.seconds(60))
@@ -114,13 +116,28 @@ defmodule Snowflex.Connection do
         :poolboy.child_spec(@name, opts, connection)
       end
 
+      @impl Snowflex.Connection
       def execute(query) when is_binary(query) do
         Snowflex.sql_query(@name, query, @timeout)
       end
 
+      @impl Snowflex.Connection
       def execute(query, params) when is_binary(query) and is_list(params) do
         Snowflex.param_query(@name, query, params, @timeout)
       end
     end
   end
+
+  ## Callbacks
+
+  @doc """
+  Wraps `Snowflex.sql_query/3` and injects the relevant information from the connection
+  """
+  @callback execute(query :: String.t()) :: Snowflex.sql_data() | {:error, any}
+
+  @doc """
+  Wraps `Snowflex.param_query/4` and injects the relevant information from the connection
+  """
+  @callback execute(query :: String.t(), params :: list(Snowflex.query_param())) ::
+              Snowflex.sql_data() | {:error, any}
 end
