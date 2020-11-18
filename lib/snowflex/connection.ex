@@ -74,7 +74,7 @@ defmodule Snowflex.Connection do
     WHERE bar = ?
   \"""
 
-  SnowflakeConnection.execute(query, [Snowflex.Query.string_param("baz")])
+  SnowflakeConnection.execute(query, [Snowflex.string_param("baz")])
   ```
   """
 
