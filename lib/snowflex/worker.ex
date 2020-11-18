@@ -5,7 +5,13 @@ defmodule Snowflex.Worker do
   use GenServer
 
   @timeout :timer.seconds(60)
-  @string_types [:sql_char, :sql_wchar, :sql_varchar, :sql_wvarchar, :sql_wlongvarchar]
+  @string_types ~w(
+    sql_char
+    sql_wchar
+    sql_varchar
+    sql_wvarchar
+    sql_wlongvarchar
+  )a
 
   def start_link(connection_args) do
     GenServer.start_link(__MODULE__, connection_args, [])

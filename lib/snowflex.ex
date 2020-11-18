@@ -1,6 +1,4 @@
 defmodule Snowflex do
-  alias Snowflex.Worker
-
   @moduledoc """
   The client interface for connecting to the Snowflake data warehouse.
 
@@ -8,6 +6,8 @@ defmodule Snowflex do
   a SQL query and returns a list of maps (one per row). NOTE: due to the way the Erlang ODBC works, all values comeback
   as strings. You will need to cast values appropriately.
   """
+  alias Ecto.Changeset
+  alias Snowflex.Worker
 
   @timeout :timer.seconds(60)
   @type query_param :: {:odbc.odbc_data_type(), list(:odbc.value())}
@@ -39,6 +39,13 @@ defmodule Snowflex do
     end
   end
 
+  def cast_results(data, schema) do
+    Enum.map(data, &cast_row(&1, schema))
+  end
+
+  def int_param(val), do: {:sql_integer, val}
+  def string_param(val, length \\ 250), do: {{:sql_varchar, length}, val}
+
   # Helpers
 
   defp process_results(data) when is_list(data) do
@@ -65,4 +72,11 @@ defmodule Snowflex do
 
   defp to_string_if_charlist(data) when is_list(data), do: to_string(data)
   defp to_string_if_charlist(data), do: data
+
+  defp cast_row(row, schema) do
+    schema
+    |> struct()
+    |> Changeset.cast(row, schema.__schema__(:fields))
+    |> Changeset.apply_changes()
+  end
 end
