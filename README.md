@@ -1,5 +1,8 @@
 **THIS IS A WORK IN PROGRESS. USE AT YOUR OWN RISK.**
 
+[![Published on Hex](https://img.shields.io/hexpm/v/snowflex)](https://hex.pm/packages/snowflex)
+[![License Info](https://img.shields.io/hexpm/l/snowflex)](https://github.com/pepsico-ecommerce/snowflex/blob/master/LICENSE)
+
 # Snowflex ❄💪
 
 This application encapsulates an ODBC connection pool for connecting to the Snowflake data warehouse.
@@ -83,7 +86,7 @@ The package can be installed by adding `snowflex` to your list of dependencies i
 ```elixir
 def deps do
   [
-    {:snowflex, "~> 0.2.0"}
+    {:snowflex, "~> 0.2.1"}
   ]
 end
 ```
