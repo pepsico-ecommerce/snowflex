@@ -77,7 +77,13 @@ defmodule Snowflex.Worker do
 
       {:error, reason} ->
         Logger.warn("Unable to connect to snowflake: #{reason}")
-        Process.send_after(self(), :start, backoff |> :backoff.get() |> :timer.seconds())
+
+        Process.send_after(
+          self(),
+          {:start, connection_args},
+          backoff |> :backoff.get() |> :timer.seconds()
+        )
+
         {_, new_backoff} = :backoff.fail(backoff)
         {:noreply, %{backoff: new_backoff, state: :not_connected}}
     end
