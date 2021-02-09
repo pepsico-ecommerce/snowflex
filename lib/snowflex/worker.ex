@@ -35,7 +35,7 @@ defmodule Snowflex.Worker do
 
   @impl GenServer
   def handle_call({:sql_query, _query}, _from, state = %{state: :not_connected}) do
-    {:reply, {:err, :not_connected}, state}
+    {:reply, {:error, :not_connected}, state}
   end
 
   def handle_call({:sql_query, query}, _from, state = %{pid: pid}) do
@@ -50,7 +50,7 @@ defmodule Snowflex.Worker do
   end
 
   def handle_call({:param_query, _query, _params}, _from, state = %{state: :not_connected}) do
-    {:reply, {:err, :not_connected}, state}
+    {:reply, {:error, :not_connected}, state}
   end
 
   def handle_call({:param_query, query, params}, _from, state = %{pid: pid}) do
