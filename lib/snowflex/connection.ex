@@ -6,11 +6,16 @@ defmodule Snowflex.Connection do
 
   When used, the connection expects the `:otp_app` option. You may also define a standard timeout. This will default to 60 seconds.
 
+  If `keep_alive?` is set to `true`, each worker in the connection pool will
+  periodically send a dummy query to Snowflake to keep the authenticated
+  session from expiring.
+
   ```
   defmodule SnowflakeConnection do
     use Snowflex.Connection,
       otp_app: :my_app,
-      timeout: :timer.seconds(60)
+      timeout: :timer.seconds(60),
+      keep_alive?: true
   end
   ```
 
@@ -86,6 +91,7 @@ defmodule Snowflex.Connection do
       # setup compile time config
       otp_app = Keyword.fetch!(opts, :otp_app)
       timeout = Keyword.get(opts, :timeout, :timer.seconds(60))
+      keep_alive? = Keyword.get(opts, :keep_alive?, false)
 
       @otp_app otp_app
       @name __MODULE__
@@ -94,6 +100,8 @@ defmodule Snowflex.Connection do
         max: 10,
         min: 5
       ]
+      @keep_alive? keep_alive?
+      @heartbeat_interval :timer.hours(3)
 
       def child_spec(_) do
         config = Application.get_env(@otp_app, __MODULE__, [])
@@ -113,7 +121,7 @@ defmodule Snowflex.Connection do
           {:max_overflow, min_pool_size}
         ]
 
-        :poolboy.child_spec(@name, opts, connection)
+        :poolboy.child_spec(@name, opts, {connection, @keep_alive?, @heartbeat_interval})
       end
 
       @impl Snowflex.Connection
