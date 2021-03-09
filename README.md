@@ -86,7 +86,7 @@ The package can be installed by adding `snowflex` to your list of dependencies i
 ```elixir
 def deps do
   [
-    {:snowflex, "~> 0.2.2"}
+    {:snowflex, "~> 0.3.0"}
   ]
 end
 ```
