@@ -38,11 +38,11 @@ defmodule Snowflex do
   @type rows :: [row()]
   @type result_tuple :: {:updated, n_rows()} | {:selected, col_names(), rows()}
 
+  @type sql_data :: result_tuple() | [result_tuple()]
   @type query_param :: {odbc_data_type(), list(value())}
-  @type sql_data :: list(%{optional(String.t()) => String.t()})
 
   @spec sql_query(atom(), String.t(), timeout()) ::
-          result_tuple() | [result_tuple()] | {:error, term()}
+          sql_data() | {:error, term()}
 
   def sql_query(pool_name, query, timeout) do
     case :poolboy.transaction(
@@ -56,7 +56,7 @@ defmodule Snowflex do
   end
 
   @spec param_query(atom(), String.t(), list(query_param()), timeout()) ::
-          sql_data() | {:error, term}
+          sql_data() | {:error, term()}
   def param_query(pool_name, query, params \\ [], timeout) do
     case :poolboy.transaction(
            pool_name,
