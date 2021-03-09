@@ -28,7 +28,11 @@ defmodule Snowflex.Worker do
   ## GENSERVER CALL BACKS
 
   @impl GenServer
-  def init({connection_args, keep_alive?, heartbeat_interval}) do
+  def init(
+        connection_args: connection_args,
+        keep_alive?: keep_alive?,
+        heartbeat_interval: heartbeat_interval
+      ) do
     send(self(), {:start, connection_args, keep_alive?, heartbeat_interval})
     {:ok, %{backoff: :backoff.init(2, 60), state: :not_connected}}
   end

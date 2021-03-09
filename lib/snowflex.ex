@@ -9,11 +9,41 @@ defmodule Snowflex do
   alias Ecto.Changeset
   alias Snowflex.Worker
 
-  @type query_param :: {:odbc.odbc_data_type(), list(:odbc.value())}
+  # Shamelessly copied from http://erlang.org/doc/man/odbc.html#common-data-types-
+  @type precision :: integer()
+  @type scale :: integer()
+  @type size :: integer()
+  @type odbc_data_type ::
+          :sql_integer
+          | :sql_smallint
+          | :sql_tinyint
+          | {:sql_decimal, precision(), scale()}
+          | {:sql_numeric, precision(), scale()}
+          | {:sql_char, size()}
+          | {:sql_wchar, size()}
+          | {:sql_varchar, size()}
+          | {:sql_wvarchar, size()}
+          | {:sql_float, precision()}
+          | {:sql_wlongvarchar, size()}
+          | {:sql_float, precision()}
+          | :sql_real
+          | :sql_double
+          | :sql_bit
+          | atom()
+  @type value :: nil | term()
+  @type n_rows :: integer()
+  @type col_name :: String.t()
+  @type col_names :: [col_name()]
+  @type row :: {value()}
+  @type rows :: [row()]
+  @type result_tuple :: {:updated, n_rows()} | {:selected, col_names(), rows()}
+
+  @type query_param :: {odbc_data_type(), list(value())}
   @type sql_data :: list(%{optional(String.t()) => String.t()})
 
   @spec sql_query(atom(), String.t(), timeout()) ::
-          sql_data() | {:error, term}
+          result_tuple() | [result_tuple()] | {:error, term()}
+
   def sql_query(pool_name, query, timeout) do
     case :poolboy.transaction(
            pool_name,
