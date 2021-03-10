@@ -44,6 +44,7 @@ defmodule Snowflex.MixProject do
       {:poolboy, "~> 1.5.1"},
       {:backoff, "~> 1.1.6"},
       {:ecto, "~> 3.0"},
+      {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:ex_doc, "~> 0.21", only: :dev, runtime: false},
       {:meck, "~> 0.9", only: :test}
     ]

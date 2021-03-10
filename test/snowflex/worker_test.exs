@@ -8,6 +8,16 @@ defmodule Snowflex.WorkerTest do
     role: "DEV",
     warehouse: "CUSTOMER_DEV_WH"
   ]
+  @without_keep_alive [
+    connection_args: @connection_args,
+    keep_alive?: false,
+    heartbeat_interval: 10
+  ]
+  @with_keep_alive [
+    connection_args: @connection_args,
+    keep_alive?: true,
+    heartbeat_interval: 10
+  ]
 
   setup do
     :meck.new(:odbc, [:no_link])
@@ -22,7 +32,7 @@ defmodule Snowflex.WorkerTest do
     end
 
     test "does not send a heartbeat if `keep_alive?` is false" do
-      start_supervised!({Snowflex.Worker, {@connection_args, false, 10}})
+      start_supervised!({Snowflex.Worker, @without_keep_alive})
       Process.sleep(15)
 
       assert :meck.num_calls(:odbc, :sql_query, ["mock pid", 'SELECT 1']) == 0
@@ -30,7 +40,7 @@ defmodule Snowflex.WorkerTest do
 
     test "sends heartbeat every interval if `keep_alive?` is true" do
       assert capture_log(fn ->
-               start_supervised!({Snowflex.Worker, {@connection_args, true, 10}})
+               start_supervised!({Snowflex.Worker, @with_keep_alive})
                Process.sleep(30)
              end) =~ "sending heartbeat"
 
@@ -44,7 +54,7 @@ defmodule Snowflex.WorkerTest do
 
       refute(
         capture_log(fn ->
-          worker = start_supervised!({Snowflex.Worker, {@connection_args, true, 10}})
+          worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
           Process.sleep(7)
           Snowflex.Worker.sql_query(worker, "SELECT * FROM my_table")
           Process.sleep(7)
@@ -63,7 +73,7 @@ defmodule Snowflex.WorkerTest do
 
       refute(
         capture_log(fn ->
-          worker = start_supervised!({Snowflex.Worker, {@connection_args, true, 10}})
+          worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
           Process.sleep(7)
 
           Snowflex.Worker.param_query(worker, "SELECT * FROM my_table WHERE name=?", [

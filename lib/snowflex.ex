@@ -9,11 +9,34 @@ defmodule Snowflex do
   alias Ecto.Changeset
   alias Snowflex.Worker
 
-  @type query_param :: {:odbc.odbc_data_type(), list(:odbc.value())}
+  # Shamelessly copied from http://erlang.org/doc/man/odbc.html#common-data-types-
+  @type precision :: integer()
+  @type scale :: integer()
+  @type size :: integer()
+  @type odbc_data_type ::
+          :sql_integer
+          | :sql_smallint
+          | :sql_tinyint
+          | {:sql_decimal, precision(), scale()}
+          | {:sql_numeric, precision(), scale()}
+          | {:sql_char, size()}
+          | {:sql_wchar, size()}
+          | {:sql_varchar, size()}
+          | {:sql_wvarchar, size()}
+          | {:sql_float, precision()}
+          | {:sql_wlongvarchar, size()}
+          | {:sql_float, precision()}
+          | :sql_real
+          | :sql_double
+          | :sql_bit
+          | atom()
+  @type value :: nil | term()
+
+  @type query_param :: {odbc_data_type(), [value()]}
   @type sql_data :: list(%{optional(String.t()) => String.t()})
 
   @spec sql_query(atom(), String.t(), timeout()) ::
-          sql_data() | {:error, term}
+          sql_data() | {:error, term()}
   def sql_query(pool_name, query, timeout) do
     case :poolboy.transaction(
            pool_name,
@@ -26,7 +49,7 @@ defmodule Snowflex do
   end
 
   @spec param_query(atom(), String.t(), list(query_param()), timeout()) ::
-          sql_data() | {:error, term}
+          sql_data() | {:error, term()}
   def param_query(pool_name, query, params \\ [], timeout) do
     case :poolboy.transaction(
            pool_name,

@@ -121,7 +121,11 @@ defmodule Snowflex.Connection do
           {:max_overflow, min_pool_size}
         ]
 
-        :poolboy.child_spec(@name, opts, {connection, @keep_alive?, @heartbeat_interval})
+        :poolboy.child_spec(@name, opts,
+          connection_args: connection,
+          keep_alive?: @keep_alive?,
+          heartbeat_interval: @heartbeat_interval
+        )
       end
 
       @impl Snowflex.Connection
