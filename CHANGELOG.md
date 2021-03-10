@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2021-03-10
+
+### Fixed
+
+- Initialize the worker with a propslist instead of a tuple.
+- create copies of the `odbc` type definitions
+
 ## [0.3.0] - 2021-03-09
 
 ### Added
