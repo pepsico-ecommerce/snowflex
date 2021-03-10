@@ -31,19 +31,12 @@ defmodule Snowflex do
           | :sql_bit
           | atom()
   @type value :: nil | term()
-  @type n_rows :: integer()
-  @type col_name :: String.t()
-  @type col_names :: [col_name()]
-  @type row :: {value()}
-  @type rows :: [row()]
-  @type result_tuple :: {:updated, n_rows()} | {:selected, col_names(), rows()}
 
-  @type sql_data :: result_tuple() | [result_tuple()]
-  @type query_param :: {odbc_data_type(), list(value())}
+  @type query_param :: {odbc_data_type(), [value()]}
+  @type sql_data :: list(%{optional(String.t()) => String.t()})
 
   @spec sql_query(atom(), String.t(), timeout()) ::
           sql_data() | {:error, term()}
-
   def sql_query(pool_name, query, timeout) do
     case :poolboy.transaction(
            pool_name,
