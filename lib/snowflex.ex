@@ -91,6 +91,7 @@ defmodule Snowflex do
       end)
     end)
   end
+  defp process_results(results), do: results
 
   defp to_string_if_charlist(data) when is_list(data), do: to_string(data)
   defp to_string_if_charlist(data), do: data
