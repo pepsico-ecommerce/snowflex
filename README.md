@@ -16,7 +16,7 @@ config :snowflex,
   driver: "/path/to/my/ODBC/driver" # defaults to "/usr/lib/snowflake/odbc/lib/libSnowflake.so"
 ```
 
-Connection pools are not automatically started for you. You will need to define and establish each connection pool in your application module. configuration values related to connection timeouts and the mapping of `:null` query values can be set here.
+Connection pools are not automatically started for you. You will need to define and establish each connection pool in your application module. Configuration values related to connection timeouts and the mapping of `:null` query values can be set here.
 
 First, create a module to hold your connection information:
 
@@ -92,7 +92,7 @@ The package can be installed by adding `snowflex` to your list of dependencies i
 ```elixir
 def deps do
   [
-    {:snowflex, "~> 0.3.1"}
+    {:snowflex, "~> 0.3.2"}
   ]
 end
 ```
