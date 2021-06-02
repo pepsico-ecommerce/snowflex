@@ -75,6 +75,8 @@ defmodule Snowflex do
   end
 
   defp process_results({:selected, headers, rows}) do
+    null_to_nil? = Application.get_env(:snowflex, :map_nulls_to_nil?, true)
+
     bin_headers =
       headers
       |> Enum.map(fn header -> header |> to_string() |> String.downcase() end)
@@ -86,6 +88,7 @@ defmodule Snowflex do
           row
           |> elem(index)
           |> to_string_if_charlist()
+          |> map_null_to_nil(null_to_nil?)
 
         Map.put(map, col, data)
       end)
@@ -94,6 +97,9 @@ defmodule Snowflex do
 
   defp to_string_if_charlist(data) when is_list(data), do: to_string(data)
   defp to_string_if_charlist(data), do: data
+
+  defp map_null_to_nil(:null, true), do: nil
+  defp map_null_to_nil(data, _), do: data
 
   defp cast_row(row, schema) do
     schema
