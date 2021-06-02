@@ -91,17 +91,21 @@ defmodule Snowflex.Connection do
       # setup compile time config
       otp_app = Keyword.fetch!(opts, :otp_app)
       timeout = Keyword.get(opts, :timeout, :timer.seconds(60))
+      map_nulls_to_nil? = Keyword.get(opts, :map_nulls_to_nil?, false)
       keep_alive? = Keyword.get(opts, :keep_alive?, false)
 
       @otp_app otp_app
       @name __MODULE__
-      @timeout timeout
       @default_size [
         max: 10,
         min: 5
       ]
       @keep_alive? keep_alive?
       @heartbeat_interval :timer.hours(3)
+      @query_opts [
+        timeout: timeout,
+        map_nulls_to_nil?: map_nulls_to_nil?
+      ]
 
       def child_spec(_) do
         config = Application.get_env(@otp_app, __MODULE__, [])
@@ -130,12 +134,12 @@ defmodule Snowflex.Connection do
 
       @impl Snowflex.Connection
       def execute(query) when is_binary(query) do
-        Snowflex.sql_query(@name, query, @timeout)
+        Snowflex.sql_query(@name, query, @query_opts)
       end
 
       @impl Snowflex.Connection
       def execute(query, params) when is_binary(query) and is_list(params) do
-        Snowflex.param_query(@name, query, params, @timeout)
+        Snowflex.param_query(@name, query, params, @query_opts)
       end
     end
   end

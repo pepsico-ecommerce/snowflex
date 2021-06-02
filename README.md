@@ -16,14 +16,16 @@ config :snowflex,
   driver: "/path/to/my/ODBC/driver" # defaults to "/usr/lib/snowflake/odbc/lib/libSnowflake.so"
 ```
 
-Connection pools are not automatically started for you. You will need to define and establish each connection pool in your application module.
+Connection pools are not automatically started for you. You will need to define and establish each connection pool in your application module. configuration values related to connection timeouts and the mapping of `:null` query values can be set here.
 
 First, create a module to hold your connection information:
 
 ```elixir
 defmodule MyApp.SnowflakeConnection do
   use Snowflex.Connection,
-    otp_app: :my_app
+    otp_app: :my_app,
+    timeout: :timer.minutes(20),
+    map_nulls_to_nil?: true
 end
 ```
 
@@ -52,6 +54,10 @@ config :my_app, MyApp.SnowflakeConnection,
       pwd: System.get_env("SNOWFLAKE_ADVERTISING_PWD")
     ]
 ```
+
+The odbc driver will, by default, return `:null` for empty values returned from snowflake queries.
+This will be converted to `nil` by default by Snowflex. A configuration value `map_nulls_to_nil?`
+can be set to `false` if you do not desire this behavior.
 
 Then, in your application module, you would start your connection:
 
