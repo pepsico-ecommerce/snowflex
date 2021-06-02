@@ -51,9 +51,9 @@ defmodule Snowflex do
     end
   end
 
-  @spec param_query(atom(), String.t(), query_opts(), list(query_param())) ::
+  @spec param_query(atom(), String.t(), list(query_param()), query_opts()) ::
           sql_data() | {:error, term()}
-  def param_query(pool_name, query, opts, params) do
+  def param_query(pool_name, query, params, opts) do
     timeout = Keyword.get(opts, :timeout)
 
     case :poolboy.transaction(

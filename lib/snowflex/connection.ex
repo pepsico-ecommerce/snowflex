@@ -139,7 +139,7 @@ defmodule Snowflex.Connection do
 
       @impl Snowflex.Connection
       def execute(query, params) when is_binary(query) and is_list(params) do
-        Snowflex.param_query(@name, query, @query_opts, params)
+        Snowflex.param_query(@name, query, params, @query_opts)
       end
     end
   end
