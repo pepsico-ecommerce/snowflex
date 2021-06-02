@@ -34,29 +34,34 @@ defmodule Snowflex do
 
   @type query_param :: {odbc_data_type(), [value()]}
   @type sql_data :: list(%{optional(String.t()) => String.t()})
+  @type query_opts :: [timeout: timeout(), map_null_to_nil?: boolean()]
 
-  @spec sql_query(atom(), String.t(), timeout()) ::
+  @spec sql_query(atom(), String.t(), query_opts()) ::
           sql_data() | {:error, term()}
-  def sql_query(pool_name, query, timeout) do
+  def sql_query(pool_name, query, opts) do
+    timeout = Keyword.get(opts, :timeout)
+
     case :poolboy.transaction(
            pool_name,
            &Worker.sql_query(&1, query, timeout),
            timeout
          ) do
-      {:ok, results} -> process_results(results)
+      {:ok, results} -> process_results(results, opts)
       err -> err
     end
   end
 
-  @spec param_query(atom(), String.t(), list(query_param()), timeout()) ::
+  @spec param_query(atom(), String.t(), query_opts(), list(query_param())) ::
           sql_data() | {:error, term()}
-  def param_query(pool_name, query, params \\ [], timeout) do
+  def param_query(pool_name, query, opts, params) do
+    timeout = Keyword.get(opts, :timeout)
+
     case :poolboy.transaction(
            pool_name,
            &Worker.param_query(&1, query, params, timeout),
            timeout
          ) do
-      {:ok, results} -> process_results(results)
+      {:ok, results} -> process_results(results, opts)
       err -> err
     end
   end
@@ -70,12 +75,12 @@ defmodule Snowflex do
 
   # Helpers
 
-  defp process_results(data) when is_list(data) do
-    Enum.map(data, &process_results(&1))
+  defp process_results(data, opts) when is_list(data) do
+    Enum.map(data, &process_results(&1, opts))
   end
 
-  defp process_results({:selected, headers, rows}) do
-    null_to_nil? = Application.get_env(:snowflex, :map_nulls_to_nil?, true)
+  defp process_results({:selected, headers, rows}, opts) do
+    map_nulls_to_nil? = Keyword.get(opts, :map_nulls_to_nil?)
 
     bin_headers =
       headers
@@ -88,7 +93,7 @@ defmodule Snowflex do
           row
           |> elem(index)
           |> to_string_if_charlist()
-          |> map_null_to_nil(null_to_nil?)
+          |> map_null_to_nil(map_nulls_to_nil?)
 
         Map.put(map, col, data)
       end)
