@@ -15,7 +15,8 @@ defmodule Snowflex.Connection do
     use Snowflex.Connection,
       otp_app: :my_app,
       timeout: :timer.seconds(60),
-      keep_alive?: true
+      keep_alive?: true,
+      map_nulls_to_nil?: true
   end
   ```
 
@@ -67,19 +68,27 @@ defmodule Snowflex.Connection do
 
   `execute/1`
   ```
-  query = "SELECT * FROM foo"
+  {:ok, query} = Snowflex.Query.create(%{query_string: "SELECT * FROM foo"})
 
   SnowflakeConnection.execute(query)
-  ```
 
-  `execute/2`
-  ```
-  query = \"""
+  # or with parameters
+
+  query_string = \"""
     SELECT * FROM foo
     WHERE bar = ?
   \"""
 
-  SnowflakeConnection.execute(query, [Snowflex.string_param("baz")])
+  {:ok, query} = Snowflex.Query.create(%{query_string: query_string, params: ["baz"]})
+  SnowflakeConnection.execute(query)
+  ```
+
+  You may also override any Connection-level options on each execute.
+
+  ```
+  {:ok, query} = Snowflex.Query.create(%{query_string: "SELECT * FROM foo"})
+
+  SnowflakeConnection.execute(query, timeout: :timer.minutes(1))
   ```
   """
 
@@ -102,7 +111,7 @@ defmodule Snowflex.Connection do
       ]
       @keep_alive? keep_alive?
       @heartbeat_interval :timer.hours(3)
-      @query_opts [
+      @default_connection_opts [
         timeout: timeout,
         map_nulls_to_nil?: map_nulls_to_nil?
       ]
@@ -133,13 +142,9 @@ defmodule Snowflex.Connection do
       end
 
       @impl Snowflex.Connection
-      def execute(query) when is_binary(query) do
-        Snowflex.sql_query(@name, query, @query_opts)
-      end
-
-      @impl Snowflex.Connection
-      def execute(query, params) when is_binary(query) and is_list(params) do
-        Snowflex.param_query(@name, query, params, @query_opts)
+      def execute(query = %Snowflex.Query{}, connection_opts \\ []) do
+        connection_opts = Keyword.merge(@default_connection_opts, connection_opts)
+        Snowflex.do_query(@name, query, connection_opts)
       end
     end
   end
@@ -147,13 +152,8 @@ defmodule Snowflex.Connection do
   ## Callbacks
 
   @doc """
-  Wraps `Snowflex.sql_query/3` and injects the relevant information from the connection
+  Wraps `Snowflex.do_query/3` and injects the relevant information from the connection
   """
-  @callback execute(query :: String.t()) :: Snowflex.sql_data() | {:error, any}
-
-  @doc """
-  Wraps `Snowflex.param_query/4` and injects the relevant information from the connection
-  """
-  @callback execute(query :: String.t(), params :: list(Snowflex.query_param())) ::
+  @callback execute(query :: Snowflex.Query.t(), connection_opts :: Snowflex.connection_opts()) ::
               Snowflex.sql_data() | {:error, any}
 end

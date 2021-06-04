@@ -78,6 +78,24 @@ def MyApp.Application do
 end
 ```
 
+## Usage
+
+In order to execute queries, you will need to create a `Snowflex.Query` struct and pass it to your execute function. It would look something like this for a static query.
+
+```elixir
+{:ok, query} = Snowflex.Query.create(%{query_string: "SELECT * FROM my_table"})
+MyApp.SnowflakeConnection.execute(query)
+```
+
+The `Query.create/1` function will also attempt to cast your SQL params.
+
+```elixir
+# This will cast the params to [{:sql_integer, 1}]
+{:ok, query} = Snowflex.Query.create(%{query_string: "SELECT * FROM my_table WHERE id = ?", params: [1]})
+
+MyApp.SnowflakeConnection.execute(query)
+```
+
 ## Caveats
 
 If you are planning to connect to the Snowflake warehouse, your local Erlang instance

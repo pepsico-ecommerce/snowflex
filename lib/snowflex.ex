@@ -1,13 +1,13 @@
 defmodule Snowflex do
   @moduledoc """
-  The client interface for connecting to the Snowflake data warehouse.
+  The client interface for connecting to the Snowflake data warehouse. This module should not be used directly except for the types. The preferred method is to use a `Snowflex.Connection` to manage all query executions.
 
-  The main entry point to this module is `Snowflex.sql_query`. This function takes a string containing
+  The main entry point to this module is `Snowflex.do_query`. This function takes a `Snowflex.Query` struct containing
   a SQL query and returns a list of maps (one per row). NOTE: due to the way the Erlang ODBC works, all values comeback
   as strings. You will need to cast values appropriately.
   """
   alias Ecto.Changeset
-  alias Snowflex.Worker
+  alias Snowflex.{Worker, Query}
 
   # Shamelessly copied from http://erlang.org/doc/man/odbc.html#common-data-types-
   @type precision :: integer()
@@ -34,16 +34,16 @@ defmodule Snowflex do
 
   @type query_param :: {odbc_data_type(), [value()]}
   @type sql_data :: list(%{optional(String.t()) => String.t()})
-  @type query_opts :: [timeout: timeout(), map_null_to_nil?: boolean()]
+  @type connection_opts :: [timeout: timeout(), map_null_to_nil?: boolean()]
 
-  @spec sql_query(atom(), String.t(), query_opts()) ::
+  @spec do_query(pool_name :: atom(), query :: Query.t(), connection_opts()) ::
           sql_data() | {:error, term()}
-  def sql_query(pool_name, query, opts) do
+  def do_query(pool_name, query = %Query{params: nil}, opts) do
     timeout = Keyword.get(opts, :timeout)
 
     case :poolboy.transaction(
            pool_name,
-           &Worker.sql_query(&1, query, timeout),
+           &Worker.sql_query(&1, query.query_string, timeout),
            timeout
          ) do
       {:ok, results} -> process_results(results, opts)
@@ -51,14 +51,12 @@ defmodule Snowflex do
     end
   end
 
-  @spec param_query(atom(), String.t(), list(query_param()), query_opts()) ::
-          sql_data() | {:error, term()}
-  def param_query(pool_name, query, params, opts) do
+  def do_query(pool_name, query = %Query{}, opts) do
     timeout = Keyword.get(opts, :timeout)
 
     case :poolboy.transaction(
            pool_name,
-           &Worker.param_query(&1, query, params, timeout),
+           &Worker.param_query(&1, query.query_string, query.params, timeout),
            timeout
          ) do
       {:ok, results} -> process_results(results, opts)
@@ -69,9 +67,6 @@ defmodule Snowflex do
   def cast_results(data, schema) do
     Enum.map(data, &cast_row(&1, schema))
   end
-
-  def int_param(val), do: {:sql_integer, val}
-  def string_param(val, length \\ 250), do: {{:sql_varchar, length}, val}
 
   # Helpers
 

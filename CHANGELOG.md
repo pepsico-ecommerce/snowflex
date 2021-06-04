@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Breaking
+
+- add `Snowflex.Query` as the way to create queries and pass data.
+- remove `Snowflex.sql_query` and `Snowflex.param_query` in favor of using a single `Snowflex.do_query` function that uses the new `Snowflex.Query`.
+
+## Added
+
+- `Snowflex.Connection.execute` now accepts a keyword list of options to override `Snowflex.Connection`-level options on a per query basis.
+- Updated deps
+
 ## [0.3.2] - 2021-06-02
 
 ### Added
+
 - Added `map_nulls_to_nil?` variable to connection configuration to allow conversion of `:null` values to `:nil` in snowflake query response
 
 ## [0.3.1] - 2021-03-10
