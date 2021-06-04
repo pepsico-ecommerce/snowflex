@@ -36,9 +36,10 @@ defmodule Snowflex.ConnectionTest do
     test "should execute a sql query" do
       start_supervised!(SnowflakeConnection)
 
-      {:ok, query} = Query.create(%{query_string: "my query"})
-
-      assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeConnection.execute(query)
+      assert [%{"col" => 1}, %{"col" => 2}] ==
+               %{query_string: "my query"}
+               |> Query.create!()
+               |> SnowflakeConnection.execute()
     end
   end
 
@@ -46,9 +47,10 @@ defmodule Snowflex.ConnectionTest do
     test "should execute a param query" do
       start_supervised!(SnowflakeConnection)
 
-      {:ok, query} = Query.create(%{query_string: "my query", params: []})
-
-      assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeConnection.execute(query)
+      assert [%{"col" => 1}, %{"col" => 2}] ==
+               %{query_string: "my query", params: []}
+               |> Query.create!()
+               |> SnowflakeConnection.execute()
     end
   end
 end

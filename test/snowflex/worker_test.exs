@@ -77,7 +77,7 @@ defmodule Snowflex.WorkerTest do
           Process.sleep(7)
 
           Snowflex.Worker.param_query(worker, "SELECT * FROM my_table WHERE name=?", [
-            Snowflex.string_param("dustin")
+            {{:sql_varchar, 250}, "dustin"}
           ])
 
           Process.sleep(7)

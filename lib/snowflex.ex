@@ -64,6 +64,10 @@ defmodule Snowflex do
     end
   end
 
+  @doc """
+  Cast data results from a query into a given schema
+  """
+  @spec cast_results(data :: Enum.t(), schema :: Ecto.Schema.t()) :: list
   def cast_results(data, schema) do
     Enum.map(data, &cast_row(&1, schema))
   end

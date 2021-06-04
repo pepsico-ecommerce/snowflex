@@ -3,47 +3,61 @@ defmodule Snowflex.Query do
   The module creates a structured data type for queries for easier execution.
   """
 
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  alias Snowflex.Types.SQLParam
+  @type t :: %__MODULE__{
+          query_string: String.t(),
+          params: nil | list(Snowflex.query_param())
+        }
 
   @type query_attrs :: %{
           query_string: String.t(),
-          params: nil | list()
+          params: nil | list(String.t() | integer() | Date.t())
         }
 
-  @required_fields ~w(query_string)a
-  @fields @required_fields ++ ~w(params)a
+  defstruct query_string: nil, params: nil
 
-  @primary_key false
-  embedded_schema do
-    field(:query_string, :string)
-    field(:params, {:array, SQLParam})
+  @doc """
+  Build a new Snowflex.Query struct. Will raise if unable to create.
+  """
+  @spec create!(attrs :: query_attrs()) :: t()
+  def create!(attrs) do
+    attrs
+    |> cast_params()
+    |> build_struct()
   end
 
   @doc """
   Build a new Snowflex.Query struct
   """
-  @spec create(attrs :: query_attrs()) :: {:ok, %__MODULE__{}} | {:error, Ecto.Changeset.t()}
+  @spec create(attrs :: query_attrs()) :: {:ok, t()} | {:error, :invalid_query}
   def create(attrs) do
-    %__MODULE__{}
-    |> cast(attrs, @fields)
-    |> validate_required(@required_fields)
-    |> case do
-      changeset = %Ecto.Changeset{valid?: true} ->
-        query = apply_changes(changeset)
-        params = dump_params(query.params)
+    try do
+      query = create!(attrs)
 
-        {:ok, %__MODULE__{query | params: params}}
-
-      changeset ->
-        {:error, changeset}
+      {:ok, query}
+    rescue
+      e in ArgumentError ->
+        {:error, e.message}
     end
   end
 
   # HELPERS
 
-  defp dump_params(nil), do: nil
-  defp dump_params(params), do: Enum.flat_map(params, &Map.to_list/1)
+  defp cast_params(attrs = %{params: params}) when not is_nil(params) do
+    Map.put(attrs, :params, Enum.map(params, &do_param_cast/1))
+  end
+
+  defp cast_params(attrs), do: attrs
+
+  defp do_param_cast(param) when is_binary(param), do: {{:sql_varchar, 250}, param}
+  defp do_param_cast(param) when is_integer(param), do: {:sql_integer, param}
+  defp do_param_cast(param = %Date{}), do: {{:sql_varchar, 250}, Date.to_iso8601(param)}
+  defp do_param_cast(_param), do: raise(ArgumentError, "unsupported parameter type given")
+
+  defp build_struct(attrs) do
+    unless Map.has_key?(attrs, :query_string) do
+      raise(ArgumentError, "must provide :query_string to build Query")
+    end
+
+    struct(__MODULE__, attrs)
+  end
 end
