@@ -21,8 +21,16 @@ defmodule Snowflex.ConnectionTest do
       {:ok, %{}}
     end
 
+    def handle_call({:sql_query, "insert " <> _}, _from, state) do
+      {:reply, {:ok, {:updated, 123}}, state}
+    end
+
     def handle_call({:sql_query, _}, _from, state) do
       {:reply, {:ok, {:selected, ['col'], [{1}, {2}]}}, state}
+    end
+
+    def handle_call({:param_query, "insert " <> _, _}, _from, state) do
+      {:reply, {:ok, {:updated, 123}}, state}
     end
 
     def handle_call({:param_query, _, _}, _from, state) do
@@ -36,6 +44,12 @@ defmodule Snowflex.ConnectionTest do
 
       assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeConnection.execute("my query")
     end
+
+    test "should execute an insert query" do
+      start_supervised!(SnowflakeConnection)
+
+      assert {:updated, 123} == SnowflakeConnection.execute("insert query")
+    end
   end
 
   describe "execute/2" do
@@ -43,6 +57,12 @@ defmodule Snowflex.ConnectionTest do
       start_supervised!(SnowflakeConnection)
 
       assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeConnection.execute("my query", [])
+    end
+
+    test "should execute an insert param query" do
+      start_supervised!(SnowflakeConnection)
+
+      assert {:updated, 123} == SnowflakeConnection.execute("insert query", [])
     end
   end
 end

@@ -37,7 +37,7 @@ defmodule Snowflex do
   @type query_opts :: [timeout: timeout(), map_nulls_to_nil?: boolean()]
 
   @spec sql_query(atom(), String.t(), query_opts()) ::
-          sql_data() | {:error, term()}
+          sql_data() | {:error, term()} | {:updated, integer()}
   def sql_query(pool_name, query, opts) do
     timeout = Keyword.get(opts, :timeout)
 
@@ -52,7 +52,7 @@ defmodule Snowflex do
   end
 
   @spec param_query(atom(), String.t(), list(query_param()), query_opts()) ::
-          sql_data() | {:error, term()}
+          sql_data() | {:error, term()} | {:updated, integer()}
   def param_query(pool_name, query, params, opts) do
     timeout = Keyword.get(opts, :timeout)
 
@@ -99,6 +99,8 @@ defmodule Snowflex do
       end)
     end)
   end
+
+  defp process_results({:updated, _} = results, _opts), do: results
 
   defp to_string_if_charlist(data) when is_list(data), do: to_string(data)
   defp to_string_if_charlist(data), do: data

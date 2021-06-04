@@ -149,11 +149,12 @@ defmodule Snowflex.Connection do
   @doc """
   Wraps `Snowflex.sql_query/3` and injects the relevant information from the connection
   """
-  @callback execute(query :: String.t()) :: Snowflex.sql_data() | {:error, any}
+  @callback execute(query :: String.t()) ::
+              Snowflex.sql_data() | {:error, any} | {:updated, integer()}
 
   @doc """
   Wraps `Snowflex.param_query/4` and injects the relevant information from the connection
   """
   @callback execute(query :: String.t(), params :: list(Snowflex.query_param())) ::
-              Snowflex.sql_data() | {:error, any}
+              Snowflex.sql_data() | {:error, any} | {:updated, integer()}
 end
