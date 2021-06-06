@@ -1,6 +1,8 @@
 defmodule Snowflex.ConnectionTest do
   use ExUnit.Case, async: true
 
+  alias Snowflex.Query
+
   defmodule SnowflakeConnection do
     use Snowflex.Connection,
       otp_app: :snowflex
@@ -34,7 +36,10 @@ defmodule Snowflex.ConnectionTest do
     test "should execute a sql query" do
       start_supervised!(SnowflakeConnection)
 
-      assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeConnection.execute("my query")
+      assert [%{"col" => 1}, %{"col" => 2}] ==
+               %{query_string: "my query"}
+               |> Query.create!()
+               |> SnowflakeConnection.execute()
     end
   end
 
@@ -42,7 +47,10 @@ defmodule Snowflex.ConnectionTest do
     test "should execute a param query" do
       start_supervised!(SnowflakeConnection)
 
-      assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeConnection.execute("my query", [])
+      assert [%{"col" => 1}, %{"col" => 2}] ==
+               %{query_string: "my query", params: []}
+               |> Query.create!()
+               |> SnowflakeConnection.execute()
     end
   end
 end
