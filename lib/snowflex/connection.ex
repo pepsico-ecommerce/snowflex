@@ -144,7 +144,7 @@ defmodule Snowflex.Connection do
       @impl Snowflex.Connection
       def execute(query = %Snowflex.Query{}, connection_opts \\ []) do
         connection_opts = Keyword.merge(@default_connection_opts, connection_opts)
-        Snowflex.do_query(@name, query, connection_opts)
+        Snowflex.run_query(@name, query, connection_opts)
       end
     end
   end
@@ -152,7 +152,7 @@ defmodule Snowflex.Connection do
   ## Callbacks
 
   @doc """
-  Wraps `Snowflex.do_query/3` and injects the relevant information from the connection
+  Wraps `Snowflex.run_query/3` and injects the relevant information from the connection
   """
   @callback execute(query :: Snowflex.Query.t(), connection_opts :: Snowflex.connection_opts()) ::
               Snowflex.sql_data() | {:error, any}

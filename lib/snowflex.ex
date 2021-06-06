@@ -2,7 +2,7 @@ defmodule Snowflex do
   @moduledoc """
   The client interface for connecting to the Snowflake data warehouse. This module should not be used directly except for the types. The preferred method is to use a `Snowflex.Connection` to manage all query executions.
 
-  The main entry point to this module is `Snowflex.do_query`. This function takes a `Snowflex.Query` struct containing
+  The main entry point to this module is `Snowflex.run_query`. This function takes a `Snowflex.Query` struct containing
   a SQL query and returns a list of maps (one per row). NOTE: due to the way the Erlang ODBC works, all values comeback
   as strings. You will need to cast values appropriately.
   """
@@ -36,9 +36,9 @@ defmodule Snowflex do
   @type sql_data :: list(%{optional(String.t()) => String.t()})
   @type connection_opts :: [timeout: timeout(), map_null_to_nil?: boolean()]
 
-  @spec do_query(pool_name :: atom(), query :: Query.t(), connection_opts()) ::
+  @spec run_query(pool_name :: atom(), query :: Query.t(), connection_opts()) ::
           sql_data() | {:error, term()}
-  def do_query(pool_name, query = %Query{params: nil}, opts) do
+  def run_query(pool_name, query = %Query{params: nil}, opts) do
     timeout = Keyword.get(opts, :timeout)
 
     case :poolboy.transaction(
@@ -51,7 +51,7 @@ defmodule Snowflex do
     end
   end
 
-  def do_query(pool_name, query = %Query{}, opts) do
+  def run_query(pool_name, query = %Query{}, opts) do
     timeout = Keyword.get(opts, :timeout)
 
     case :poolboy.transaction(

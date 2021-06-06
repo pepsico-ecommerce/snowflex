@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Breaking
 
 - add `Snowflex.Query` as the way to create queries and pass data.
-- remove `Snowflex.sql_query` and `Snowflex.param_query` in favor of using a single `Snowflex.do_query` function that uses the new `Snowflex.Query`.
+- remove `Snowflex.sql_query` and `Snowflex.param_query` in favor of using a single `Snowflex.run_query` function that uses the new `Snowflex.Query`.
 
 ## Added
 
