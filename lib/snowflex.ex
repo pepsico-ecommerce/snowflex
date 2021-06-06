@@ -36,6 +36,9 @@ defmodule Snowflex do
   @type sql_data :: list(%{optional(String.t()) => String.t()})
   @type connection_opts :: [timeout: timeout(), map_null_to_nil?: boolean()]
 
+  @doc """
+  Runs a query using the specified pool
+  """
   @spec run_query(pool_name :: atom(), query :: Query.t(), connection_opts()) ::
           sql_data() | {:error, term()}
   def run_query(pool_name, query = %Query{params: nil}, opts) do
