@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2021-06-07
+
+### Fixed
+
+- Corrected spelling in type definition
+
 ## [0.3.2] - 2021-06-02
 
 ### Added
+
 - Added `map_nulls_to_nil?` variable to connection configuration to allow conversion of `:null` values to `:nil` in snowflake query response
 
 ## [0.3.1] - 2021-03-10
