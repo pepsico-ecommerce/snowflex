@@ -34,7 +34,7 @@ defmodule Snowflex do
 
   @type query_param :: {odbc_data_type(), [value()]}
   @type sql_data :: list(%{optional(String.t()) => String.t()})
-  @type query_opts :: [timeout: timeout(), map_null_to_nil?: boolean()]
+  @type query_opts :: [timeout: timeout(), map_nulls_to_nil?: boolean()]
 
   @spec sql_query(atom(), String.t(), query_opts()) ::
           sql_data() | {:error, term()}
