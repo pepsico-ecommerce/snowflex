@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Enabled SQL `INSERT` statements.
+
 ## [0.3.3] - 2021-06-07
 
 ### Fixed
