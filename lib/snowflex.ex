@@ -99,6 +99,7 @@ defmodule Snowflex do
       end)
     end)
   end
+  defp process_results(results), do: results
 
   defp process_results({:updated, _} = results, _opts), do: results
 
