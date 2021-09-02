@@ -87,4 +87,48 @@ defmodule Snowflex.WorkerTest do
       assert :meck.num_calls(:odbc, :sql_query, ["mock pid", 'SELECT 1']) == 0
     end
   end
+
+  describe "telemetry events" do
+    setup do
+      :meck.expect(:odbc, :connect, fn _, _ -> {:ok, "mock pid"} end)
+      :meck.expect(:odbc, :sql_query, fn "mock pid", 'SELECT 1' -> "1" end)
+      on_exit(fn -> assert :meck.validate(:odbc) end)
+    end
+
+    test "sends start and stop events" do
+      start_req_id = {:start, :rand.uniform(100)}
+      stop_req_id = {:stop, :rand.uniform(100)}
+
+      on_exit(fn ->
+        :telemetry.detach(start_req_id)
+        :telemetry.detach(stop_req_id)
+      end)
+
+      attach(start_req_id, [:snowflex, :sql_query, :start], self())
+      attach(stop_req_id, [:snowflex, :sql_query, :stop], self())
+
+      :meck.expect(:odbc, :sql_query, fn "mock pid", 'SELECT * FROM my_table' ->
+        {:selected, ['name'], [{'dustin'}]}
+      end)
+
+      worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
+      Snowflex.Worker.sql_query(worker, "SELECT * FROM my_table")
+
+      assert_received {:event, [:snowflex, :sql_query, :start], %{system_time: _},
+                       %{query: "SELECT * FROM my_table"}}
+
+      assert_received {:event, [:snowflex, :sql_query, :stop], %{duration: _}, %{}}
+    end
+  end
+
+  defp attach(handler_id, event, pid) do
+    :telemetry.attach(
+      handler_id,
+      event,
+      fn event, measurements, metadata, _ ->
+        send(pid, {:event, event, measurements, metadata})
+      end,
+      nil
+    )
+  end
 end
