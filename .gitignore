@@ -22,6 +22,8 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 snowflex-*.tar
 
-.elixir_ls
+# Temporary files, for example, from tests.
+/tmp/
 
+# Misc.
 /config/*.secret.exs

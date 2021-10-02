@@ -1,9 +1,12 @@
 **THIS IS A WORK IN PROGRESS. USE AT YOUR OWN RISK.**
 
-[![Published on Hex](https://img.shields.io/hexpm/v/snowflex)](https://hex.pm/packages/snowflex)
-[![License Info](https://img.shields.io/hexpm/l/snowflex)](https://github.com/pepsico-ecommerce/snowflex/blob/master/LICENSE)
-
 # Snowflex ❄💪
+
+[![Module Version](https://img.shields.io/hexpm/v/snowflex.svg)](https://hex.pm/packages/snowflex)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/snowflex/)
+[![Total Download](https://img.shields.io/hexpm/dt/snowflex.svg)](https://hex.pm/packages/snowflex)
+[![License](https://img.shields.io/hexpm/l/snowflex.svg)](https://github.com/pepsico-ecommerce/snowflex/blob/master/LICENSE)
+[![Last Updated](https://img.shields.io/github/last-commit/pepsico-ecommerce/snowflex.svg)](https://github.com/pepsico-ecommerce/snowflex/commits/master)
 
 This application encapsulates an ODBC connection pool for connecting to the Snowflake data warehouse.
 
@@ -87,7 +90,7 @@ on your machine. You can download this from https://sfc-repo.snowflakecomputing.
 
 ## Installation
 
-The package can be installed by adding `snowflex` to your list of dependencies in `mix.exs`:
+The package can be installed by adding `:snowflex` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -147,3 +150,17 @@ alias Snowflex.DBConnection.Result
 
 [%{"col" => 1}, %{"col" => 2}] = SnowflakeDBConnection.process_result(result)
 ```
+
+## Copyright and License
+
+Copyright (c) 2020 PepsiCo, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0).
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.

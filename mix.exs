@@ -1,16 +1,19 @@
 defmodule Snowflex.MixProject do
   use Mix.Project
 
+  @source_url "https://github.com/pepsico-ecommerce/snowflex"
+  @version "0.4.5"
+
   def project do
     [
       app: :snowflex,
-      version: "0.4.5",
+      name: "Snowflex",
+      version: @version,
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      description: description(),
       package: package(),
-      name: "Snowflex"
+      docs: docs()
     ]
   end
 
@@ -24,18 +27,14 @@ defmodule Snowflex.MixProject do
     ]
   end
 
-  defp description do
-    """
-    The client interface for connecting to the Snowflake data warehouse.
-    """
-  end
-
   defp package do
     [
-      # These are the default files included in the package
+      description: "The client interface for connecting to the Snowflake data warehouse.",
       files: ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG*),
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => "https://github.com/pepsico-ecommerce/snowflex"}
+      links: %{
+        "GitHub" => @source_url
+      }
     ]
   end
 
@@ -47,8 +46,23 @@ defmodule Snowflex.MixProject do
       {:db_connection, "~> 2.4"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
-      {:ex_doc, "~> 0.21", only: :dev, runtime: false},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:meck, "~> 0.9", only: :test}
+    ]
+  end
+
+  defp docs do
+    [
+      extras: [
+        "CHANGELOG.md": [],
+        "LICENSE": [title: "License"],
+        "README.md": [title: "Overview"]
+      ],
+      main: "readme",
+      api_reference: false,
+      source_url: @source_url,
+      source_ref: "v#{@version}",
+      formatters: ["html"]
     ]
   end
 end

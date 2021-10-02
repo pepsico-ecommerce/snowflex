@@ -35,7 +35,7 @@ defmodule Snowflex.Connection do
       ]
   ```
 
-  The connection will default to using the `Snowflex.Worker` module. You are able to define a diferent one for testing/development purposes in your configurations as well.
+  The connection will default to using the `Snowflex.Worker` module. You are able to define a different one for testing/development purposes in your configurations as well.
 
   ```
   # config/dev.exs
