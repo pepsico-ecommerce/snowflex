@@ -34,7 +34,7 @@ defmodule Snowflex.WorkerTest do
     end
 
     test "does not send a heartbeat if `keep_alive?` is false" do
-      start_supervised!({Snowflex.Worker, @without_keep_alive})
+      start_supervised!({Worker, @without_keep_alive})
       Process.sleep(15)
 
       assert :meck.num_calls(:odbc, :sql_query, ["mock pid", 'SELECT 1']) == 0
@@ -42,7 +42,7 @@ defmodule Snowflex.WorkerTest do
 
     test "sends heartbeat every interval if `keep_alive?` is true" do
       assert capture_log(fn ->
-               start_supervised!({Snowflex.Worker, @with_keep_alive})
+               start_supervised!({Worker, @with_keep_alive})
                Process.sleep(30)
              end) =~ "sending heartbeat"
 
@@ -56,9 +56,9 @@ defmodule Snowflex.WorkerTest do
 
       refute(
         capture_log(fn ->
-          worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
+          worker = start_supervised!({Worker, @with_keep_alive})
           Process.sleep(7)
-          Snowflex.Worker.sql_query(worker, "SELECT * FROM my_table")
+          Worker.sql_query(worker, "SELECT * FROM my_table")
           Process.sleep(7)
         end) =~ "sending heartbeat"
       )
@@ -75,10 +75,10 @@ defmodule Snowflex.WorkerTest do
 
       refute(
         capture_log(fn ->
-          worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
+          worker = start_supervised!({Worker, @with_keep_alive})
           Process.sleep(7)
 
-          Snowflex.Worker.param_query(worker, "SELECT * FROM my_table WHERE name=?", [
+          Worker.param_query(worker, "SELECT * FROM my_table WHERE name=?", [
             Snowflex.string_param("dustin")
           ])
 
@@ -113,8 +113,8 @@ defmodule Snowflex.WorkerTest do
         {:selected, ['name'], [{'dustin'}]}
       end)
 
-      worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
-      Snowflex.Worker.sql_query(worker, "SELECT * FROM my_table")
+      worker = start_supervised!({Worker, @with_keep_alive})
+      Worker.sql_query(worker, "SELECT * FROM my_table")
 
       assert_received {:event, [:snowflex, :sql_query, :start], %{system_time: _},
                        %{query: "SELECT * FROM my_table"}}
