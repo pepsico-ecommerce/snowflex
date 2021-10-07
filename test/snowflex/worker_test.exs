@@ -88,7 +88,7 @@ defmodule Snowflex.WorkerTest do
         end) =~ "sending heartbeat"
       )
 
-      assert :meck.num_calls(:odbc, :sql_query, ["mock pid", 'SELECT 1']) == 0
+      assert :meck.num_calls(:odbc, :param_query, ["mock pid", 'SELECT 1']) == 0
     end
   end
 
