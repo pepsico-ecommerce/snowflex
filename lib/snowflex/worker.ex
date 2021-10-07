@@ -164,10 +164,28 @@ defmodule Snowflex.Worker do
   end
 
   defp prepare_param({{type_atom, _size} = type, values}) when type_atom in @string_types do
-    {type, Enum.map(values, &to_charlist/1)}
+    {type, Enum.map(values, &null_or_charlist/1)}
   end
 
-  defp prepare_param(param), do: param
+  defp prepare_param({type, values}) do
+    {type, Enum.map(values, &null_or_any/1)}
+  end
+
+  defp null_or_charlist(nil) do
+    :null
+  end
+
+  defp null_or_charlist(val) do
+    to_charlist(val)
+  end
+
+  defp null_or_any(nil) do
+    :null
+  end
+
+  defp null_or_any(any) do
+    any
+  end
 
   defp send_heartbeat(state) do
     Logger.info("sending heartbeat")

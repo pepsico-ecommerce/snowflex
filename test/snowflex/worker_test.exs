@@ -3,6 +3,8 @@ defmodule Snowflex.WorkerTest do
 
   import ExUnit.CaptureLog
 
+  alias Snowflex.Worker
+
   @connection_args [
     server: "snowflex.us-east-8.snowflakecomputing.com",
     role: "DEV",
@@ -118,6 +120,45 @@ defmodule Snowflex.WorkerTest do
                        %{query: "SELECT * FROM my_table"}}
 
       assert_received {:event, [:snowflex, :sql_query, :stop], %{duration: _}, %{}}
+    end
+  end
+
+  describe "param_query" do
+    setup do
+      :meck.expect(:odbc, :connect, fn _, _ -> {:ok, "mock pid"} end)
+      on_exit(fn -> assert :meck.validate(:odbc) end)
+    end
+
+    test "with a string type, converts nil values to :null and strings to charlists" do
+      :meck.expect(:odbc, :param_query, fn "mock pid",
+                                           '[some param query]',
+                                           [{{:sql_varchar, 255}, ['abc', :null, 'def']}] ->
+        "1"
+      end)
+
+      query = "[some param query]"
+      params = [{{:sql_varchar, 255}, ["abc", nil, "def"]}]
+
+      capture_log(fn ->
+        worker = start_supervised!({Worker, @with_keep_alive})
+        Worker.param_query(worker, query, params)
+      end)
+    end
+
+    test "with an integer type, converts nil values to :null" do
+      :meck.expect(:odbc, :param_query, fn "mock pid",
+                                           '[some param query]',
+                                           [{{:sql_integer, 255}, [123, :null, 456]}] ->
+        "1"
+      end)
+
+      query = "[some param query]"
+      params = [{{:sql_integer, 255}, [123, nil, 456]}]
+
+      capture_log(fn ->
+        worker = start_supervised!({Worker, @with_keep_alive})
+        Worker.param_query(worker, query, params)
+      end)
     end
   end
 
