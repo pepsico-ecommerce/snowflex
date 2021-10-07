@@ -34,8 +34,10 @@ defmodule Snowflex.WorkerTest do
     end
 
     test "does not send a heartbeat if `keep_alive?` is false" do
-      start_supervised!({Worker, @without_keep_alive})
-      Process.sleep(15)
+      capture_log(fn ->
+        start_supervised!({Worker, @without_keep_alive})
+        Process.sleep(15)
+      end)
 
       assert :meck.num_calls(:odbc, :sql_query, ["mock pid", 'SELECT 1']) == 0
     end
@@ -106,15 +108,19 @@ defmodule Snowflex.WorkerTest do
         :telemetry.detach(stop_req_id)
       end)
 
-      attach(start_req_id, [:snowflex, :sql_query, :start], self())
-      attach(stop_req_id, [:snowflex, :sql_query, :stop], self())
+      capture_log(fn ->
+        attach(start_req_id, [:snowflex, :sql_query, :start], self())
+        attach(stop_req_id, [:snowflex, :sql_query, :stop], self())
+      end)
 
       :meck.expect(:odbc, :sql_query, fn "mock pid", 'SELECT * FROM my_table' ->
         {:selected, ['name'], [{'dustin'}]}
       end)
 
-      worker = start_supervised!({Worker, @with_keep_alive})
-      Worker.sql_query(worker, "SELECT * FROM my_table")
+      capture_log(fn ->
+        worker = start_supervised!({Worker, @with_keep_alive})
+        Worker.sql_query(worker, "SELECT * FROM my_table")
+      end)
 
       assert_received {:event, [:snowflex, :sql_query, :start], %{system_time: _},
                        %{query: "SELECT * FROM my_table"}}
