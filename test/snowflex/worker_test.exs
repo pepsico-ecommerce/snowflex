@@ -3,6 +3,8 @@ defmodule Snowflex.WorkerTest do
 
   import ExUnit.CaptureLog
 
+  alias Snowflex.Worker
+
   @connection_args [
     server: "snowflex.us-east-8.snowflakecomputing.com",
     role: "DEV",
@@ -32,15 +34,17 @@ defmodule Snowflex.WorkerTest do
     end
 
     test "does not send a heartbeat if `keep_alive?` is false" do
-      start_supervised!({Snowflex.Worker, @without_keep_alive})
-      Process.sleep(15)
+      capture_log(fn ->
+        start_supervised!({Worker, @without_keep_alive})
+        Process.sleep(15)
+      end)
 
       assert :meck.num_calls(:odbc, :sql_query, ["mock pid", 'SELECT 1']) == 0
     end
 
     test "sends heartbeat every interval if `keep_alive?` is true" do
       assert capture_log(fn ->
-               start_supervised!({Snowflex.Worker, @with_keep_alive})
+               start_supervised!({Worker, @with_keep_alive})
                Process.sleep(30)
              end) =~ "sending heartbeat"
 
@@ -54,9 +58,9 @@ defmodule Snowflex.WorkerTest do
 
       refute(
         capture_log(fn ->
-          worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
+          worker = start_supervised!({Worker, @with_keep_alive})
           Process.sleep(7)
-          Snowflex.Worker.sql_query(worker, "SELECT * FROM my_table")
+          Worker.sql_query(worker, "SELECT * FROM my_table")
           Process.sleep(7)
         end) =~ "sending heartbeat"
       )
@@ -73,10 +77,10 @@ defmodule Snowflex.WorkerTest do
 
       refute(
         capture_log(fn ->
-          worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
+          worker = start_supervised!({Worker, @with_keep_alive})
           Process.sleep(7)
 
-          Snowflex.Worker.param_query(worker, "SELECT * FROM my_table WHERE name=?", [
+          Worker.param_query(worker, "SELECT * FROM my_table WHERE name=?", [
             Snowflex.string_param("dustin")
           ])
 
@@ -84,7 +88,7 @@ defmodule Snowflex.WorkerTest do
         end) =~ "sending heartbeat"
       )
 
-      assert :meck.num_calls(:odbc, :sql_query, ["mock pid", 'SELECT 1']) == 0
+      assert :meck.num_calls(:odbc, :param_query, ["mock pid", 'SELECT 1']) == 0
     end
   end
 
@@ -104,20 +108,63 @@ defmodule Snowflex.WorkerTest do
         :telemetry.detach(stop_req_id)
       end)
 
-      attach(start_req_id, [:snowflex, :sql_query, :start], self())
-      attach(stop_req_id, [:snowflex, :sql_query, :stop], self())
+      capture_log(fn ->
+        attach(start_req_id, [:snowflex, :sql_query, :start], self())
+        attach(stop_req_id, [:snowflex, :sql_query, :stop], self())
+      end)
 
       :meck.expect(:odbc, :sql_query, fn "mock pid", 'SELECT * FROM my_table' ->
         {:selected, ['name'], [{'dustin'}]}
       end)
 
-      worker = start_supervised!({Snowflex.Worker, @with_keep_alive})
-      Snowflex.Worker.sql_query(worker, "SELECT * FROM my_table")
+      capture_log(fn ->
+        worker = start_supervised!({Worker, @with_keep_alive})
+        Worker.sql_query(worker, "SELECT * FROM my_table")
+      end)
 
       assert_received {:event, [:snowflex, :sql_query, :start], %{system_time: _},
                        %{query: "SELECT * FROM my_table"}}
 
       assert_received {:event, [:snowflex, :sql_query, :stop], %{duration: _}, %{}}
+    end
+  end
+
+  describe "param_query" do
+    setup do
+      :meck.expect(:odbc, :connect, fn _, _ -> {:ok, "mock pid"} end)
+      on_exit(fn -> assert :meck.validate(:odbc) end)
+    end
+
+    test "with a string type, converts nil values to :null and strings to charlists" do
+      :meck.expect(:odbc, :param_query, fn "mock pid",
+                                           '[some param query]',
+                                           [{{:sql_varchar, 255}, ['abc', :null, 'def']}] ->
+        "1"
+      end)
+
+      query = "[some param query]"
+      params = [{{:sql_varchar, 255}, ["abc", nil, "def"]}]
+
+      capture_log(fn ->
+        worker = start_supervised!({Worker, @with_keep_alive})
+        Worker.param_query(worker, query, params)
+      end)
+    end
+
+    test "with an integer type, converts nil values to :null" do
+      :meck.expect(:odbc, :param_query, fn "mock pid",
+                                           '[some param query]',
+                                           [{{:sql_integer, 255}, [123, :null, 456]}] ->
+        "1"
+      end)
+
+      query = "[some param query]"
+      params = [{{:sql_integer, 255}, [123, nil, 456]}]
+
+      capture_log(fn ->
+        worker = start_supervised!({Worker, @with_keep_alive})
+        Worker.param_query(worker, query, params)
+      end)
     end
   end
 
