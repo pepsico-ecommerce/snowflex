@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2021-10-08
+
 ### Fixed
 
 - Properly convert elixir nil to erlang :null in query params
