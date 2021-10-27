@@ -4,7 +4,7 @@ defmodule Snowflex.MixProject do
   def project do
     [
       app: :snowflex,
-      version: "0.4.3",
+      version: "0.4.4",
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -44,7 +44,7 @@ defmodule Snowflex.MixProject do
       {:poolboy, "~> 1.5.1"},
       {:backoff, "~> 1.1.6"},
       {:ecto, "~> 3.0"},
-      {:telemetry, "~> 1.0"},
+      {:telemetry, "~> 0.4 or ~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:ex_doc, "~> 0.21", only: :dev, runtime: false},
       {:meck, "~> 0.9", only: :test}
