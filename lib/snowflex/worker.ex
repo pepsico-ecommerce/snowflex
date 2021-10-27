@@ -207,6 +207,7 @@ defmodule Snowflex.Worker do
 
   defp schedule_heartbeat(%{keep_alive?: true, heartbeat_interval: interval} = state) do
     Logger.info("scheduling next heartbeat in #{interval}ms")
+    :erlang.garbage_collect(self())
     ref = Process.send_after(self(), :send_heartbeat, interval)
     Map.put(state, :heartbeat_ref, ref)
   end
