@@ -5,6 +5,7 @@ defmodule Snowflex.Worker do
   use GenServer
 
   @timeout :timer.seconds(60)
+  @gc_delay_ms 5
   @string_types ~w(
     sql_char
     sql_wchar
@@ -54,6 +55,7 @@ defmodule Snowflex.Worker do
 
     duration = System.monotonic_time() - start_time
     :telemetry.execute(@sql_stop, %{duration: duration})
+    Process.send_after(self(), :gc, @gc_delay_ms)
     {:reply, result, state}
   end
 
@@ -109,6 +111,11 @@ defmodule Snowflex.Worker do
 
   def handle_info(:send_heartbeat, state) do
     {:noreply, state |> send_heartbeat() |> schedule_heartbeat()}
+  end
+
+  def handle_info(:gc, state) do
+    :erlang.garbage_collect(self())
+    {:no_reply, state}
   end
 
   # Helpers
@@ -207,7 +214,6 @@ defmodule Snowflex.Worker do
 
   defp schedule_heartbeat(%{keep_alive?: true, heartbeat_interval: interval} = state) do
     Logger.info("scheduling next heartbeat in #{interval}ms")
-    :erlang.garbage_collect(self())
     ref = Process.send_after(self(), :send_heartbeat, interval)
     Map.put(state, :heartbeat_ref, ref)
   end
