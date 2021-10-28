@@ -115,7 +115,7 @@ defmodule Snowflex.Worker do
 
   def handle_info(:gc, state) do
     :erlang.garbage_collect(self())
-    {:no_reply, state}
+    {:noreply, state}
   end
 
   # Helpers
