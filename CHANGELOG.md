@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2021-10-29
+
+### Added
+
+- Callback that calls gc after queries to try to shuffle binary strings off the heap. We've seen large memory savings in a real application. [#23](https://github.com/pepsico-ecommerce/snowflex/pull/31)
+
 ## [0.4.4] - 2021-10-27
 
 ### Fixed
