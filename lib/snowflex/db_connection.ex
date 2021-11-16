@@ -47,9 +47,7 @@ defmodule Snowflex.DBConnection do
         opts =
           Keyword.merge(config,
             timeout: @timeout,
-            connection: connection,
-            map_nulls_to_nil?: map_nulls_to_nil?,
-            keep_alive?: keep_alive?
+            connection: connection
           )
 
         DBConnection.child_spec(Protocol, opts)
@@ -59,7 +57,7 @@ defmodule Snowflex.DBConnection do
         DBConnection.start_link(Protocol, opts)
       end
 
-      def execute(statement) when binary(statement) do
+      def execute(statement) when is_binary(statement) do
         case prepare_execute("", statement, [], []) do
           {:ok, _query, result} -> {:ok, result}
           {:error, error} -> {:error, error}
@@ -74,7 +72,7 @@ defmodule Snowflex.DBConnection do
       end
 
       defp prepare_execute(name, statement, params \\ [], opts \\ []) do
-        query = %Query{name: name, statement: statment}
+        query = %Query{name: name, statement: statement}
         DBConnection.prepare_execute(@name, query, params, opts)
       end
     end
