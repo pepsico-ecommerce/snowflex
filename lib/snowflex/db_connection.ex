@@ -7,17 +7,11 @@ defmodule Snowflex.DBConnection do
   When used, the connection expects the `:otp_app` option. You may also define a standard timeout.
   This will default to 60 seconds.
 
-  If `keep_alive?` is set to `true`, each worker in the connection pool will
-  periodically send a dummy query to Snowflake to keep the authenticated
-  session from expiring.
-
   ```
   defmodule SnowflakeDBConnection do
     use Snowflex.DBConnection,
       otp_app: :my_app,
-      timeout: :timer.seconds(60),
-      map_nulls_to_nil?: true,
-      keep_alive?: true
+      timeout: :timer.seconds(60)
   end
   ```
   """
@@ -33,8 +27,6 @@ defmodule Snowflex.DBConnection do
       # setup compile time config
       otp_app = Keyword.fetch!(opts, :otp_app)
       timeout = Keyword.get(opts, :timeout, :timer.seconds(60))
-      map_nulls_to_nil? = Keyword.get(opts, :map_nulls_to_nil?, false)
-      keep_alive? = Keyword.get(opts, :keep_alive?, false)
 
       @otp_app otp_app
       @timeout timeout
@@ -58,7 +50,7 @@ defmodule Snowflex.DBConnection do
       end
 
       def execute(statement) when is_binary(statement) do
-        case prepare_execute("", statement, [], []) do
+        case prepare_execute("", statement) do
           {:ok, _query, result} -> {:ok, result}
           {:error, error} -> {:error, error}
         end
