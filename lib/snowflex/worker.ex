@@ -2,7 +2,10 @@ defmodule Snowflex.Worker do
   @moduledoc false
 
   require Logger
+
   use GenServer
+
+  alias Snowflex.Telemetry
 
   @timeout :timer.seconds(60)
   @gc_delay_ms 5
@@ -13,11 +16,6 @@ defmodule Snowflex.Worker do
     sql_wvarchar
     sql_wlongvarchar
   )a
-
-  @sql_start [:snowflex, :sql_query, :start]
-  @sql_stop [:snowflex, :sql_query, :stop]
-  @param_start [:snowflex, :param_query, :start]
-  @param_stop [:snowflex, :param_query, :stop]
 
   def start_link(connection_args) do
     GenServer.start_link(__MODULE__, connection_args, [])
@@ -45,35 +43,29 @@ defmodule Snowflex.Worker do
 
   @impl GenServer
   def handle_call({:sql_query, query}, _from, state) do
-    start_time = System.monotonic_time()
-    :telemetry.execute(@sql_start, %{system_time: System.system_time()}, %{query: query})
+    start_time = Telemetry.sql_start(%{query: query})
 
     {result, state} =
       state
       |> do_sql_query(query)
       |> reschedule_heartbeat()
 
-    duration = System.monotonic_time() - start_time
-    :telemetry.execute(@sql_stop, %{duration: duration})
+    Telemetry.sql_stop(start_time)
+
     Process.send_after(self(), :gc, @gc_delay_ms)
     {:reply, result, state}
   end
 
   def handle_call({:param_query, query, params}, _from, state) do
-    start_time = System.monotonic_time()
-
-    :telemetry.execute(@param_start, %{system_time: System.system_time()}, %{
-      query: query,
-      params: params
-    })
+    start_time = Telemetry.param_start(%{query: query, params: params})
 
     {result, state} =
       state
       |> do_param_query(query, params)
       |> reschedule_heartbeat()
 
-    duration = System.monotonic_time() - start_time
-    :telemetry.execute(@param_stop, %{duration: duration})
+    Telemetry.param_stop(start_time)
+
     {:reply, result, state}
   end
 
