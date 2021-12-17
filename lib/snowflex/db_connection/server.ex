@@ -10,6 +10,7 @@ defmodule Snowflex.DBConnection.Server do
   require Logger
 
   alias Snowflex.DBConnection.Error
+  alias Snowflex.Params
   alias Snowflex.Telemetry
 
   @timeout :timer.seconds(60)
@@ -122,7 +123,8 @@ defmodule Snowflex.DBConnection.Server do
         _from,
         %{pid: pid} = state
       ) do
-    start_time = Telemetry.param_start(%{query: statement})
+    start_time = Telemetry.param_start(%{query: statement, params: params})
+    params = Params.prepare(params)
 
     result =
       case :odbc.param_query(pid, to_charlist(statement), params) do
