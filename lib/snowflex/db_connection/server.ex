@@ -10,11 +10,9 @@ defmodule Snowflex.DBConnection.Server do
   require Logger
 
   alias Snowflex.DBConnection.Error
+  alias Snowflex.Telemetry
 
   @timeout :timer.seconds(60)
-  @begin_transaction 'begin transaction;'
-  @last_query_id 'SELECT LAST_QUERY_ID() as query_id;'
-  @close_transaction 'commit;'
 
   ## Public API
 
@@ -27,30 +25,47 @@ defmodule Snowflex.DBConnection.Server do
   end
 
   @doc """
+  Sends a query to the ODBC driver.
+
+  `pid` is the `:odbc` process id
+  `statement` is the SQL query string
+  `opts` are options to be passed on to `:odbc`
+  """
+  @spec sql_query(pid(), iodata(), Keyword.t()) ::
+          {:selected, [binary()], [tuple()]}
+          | {:selected, [binary()], [tuple()], [{binary()}]}
+          | {:updated, non_neg_integer()}
+          | {:error, Error.t()}
+  def sql_query(pid, statement, opts) do
+    if Process.alive?(pid) do
+      statement = IO.iodata_to_binary(statement)
+      timeout = Keyword.get(opts, :timeout, @timeout)
+
+      GenServer.call(pid, {:sql_query, %{statement: statement}}, timeout)
+    else
+      {:error, %Error{message: :no_connection}}
+    end
+  end
+
+  @doc """
   Sends a parametrized query to the ODBC driver.
 
   `pid` is the `:odbc` process id
   `statement` is the SQL query string
   `params` are the parameters to send with the SQL query
   `opts` are options to be passed on to `:odbc`
-  `with_query_id?` runs query in transaction and selects LAST_QUERY_ID()
   """
-  @spec query(pid(), iodata(), Keyword.t(), Keyword.t(), boolean()) ::
+  @spec param_query(pid(), iodata(), Keyword.t(), Keyword.t()) ::
           {:selected, [binary()], [tuple()]}
           | {:selected, [binary()], [tuple()], [{binary()}]}
           | {:updated, non_neg_integer()}
           | {:error, Error.t()}
-  def query(pid, statement, params, opts, with_query_id? \\ false) do
-    # TODO add telemetry
+  def param_query(pid, statement, params, opts) do
     if Process.alive?(pid) do
       statement = IO.iodata_to_binary(statement)
       timeout = Keyword.get(opts, :timeout, @timeout)
 
-      GenServer.call(
-        pid,
-        {:query, %{statement: statement, params: params, with_query_id: with_query_id?}},
-        timeout
-      )
+      GenServer.call(pid, {:param_query, %{statement: statement, params: params}}, timeout)
     else
       {:error, %Error{message: :no_connection}}
     end
@@ -74,50 +89,56 @@ defmodule Snowflex.DBConnection.Server do
   end
 
   @impl GenServer
-  def handle_call({:query, _query}, _from, %{state: :not_connected} = state) do
+  def handle_call({:sql_query, _query}, _from, %{state: :not_connected} = state) do
+    {:reply, {:error, :not_connected}, state}
+  end
+
+  def handle_call({:sql_query, %{statement: statement}}, _from, %{pid: pid} = state) do
+    start_time = Telemetry.sql_start(%{query: statement})
+
+    result =
+      case :odbc.sql_query(pid, to_charlist(statement)) do
+        {:error, reason} ->
+          error = Error.exception(reason)
+          Logger.warn("Unable to execute query: #{error.message}")
+
+          {:reply, {:error, error}, state}
+
+        result ->
+          {:reply, {:ok, result}, state}
+      end
+
+    Telemetry.sql_stop(start_time)
+
+    result
+  end
+
+  def handle_call({:param_query, _query}, _from, %{state: :not_connected} = state) do
     {:reply, {:error, :not_connected}, state}
   end
 
   def handle_call(
-        {:query, %{statement: statement, params: params, with_query_id: false}},
+        {:param_query, %{statement: statement, params: params}},
         _from,
         %{pid: pid} = state
       ) do
-    case :odbc.param_query(pid, to_charlist(statement), params) do
-      {:error, reason} ->
-        error = Error.exception(reason)
-        Logger.warn("Unable to execute query: #{error.message}")
+    start_time = Telemetry.param_start(%{query: statement})
 
-        {:reply, {:error, error}, state}
+    result =
+      case :odbc.param_query(pid, to_charlist(statement), params) do
+        {:error, reason} ->
+          error = Error.exception(reason)
+          Logger.warn("Unable to execute query: #{error.message}")
 
-      result ->
-        {:reply, result, state}
-    end
-  end
+          {:reply, {:error, error}, state}
 
-  def handle_call(
-        {:query, %{statement: statement, params: params, with_query_id: true}},
-        _from,
-        %{pid: pid} = state
-      ) do
-    :odbc.sql_query(pid, @begin_transaction)
+        result ->
+          {:reply, {:ok, result}, state}
+      end
 
-    case :odbc.param_query(pid, to_charlist(statement), params) do
-      {:error, reason} ->
-        error = Error.exception(reason)
-        Logger.warn("Unable to execute query: #{error.message}")
+    Telemetry.param_stop(start_time)
 
-        :odbc.sql_query(pid, @close_transaction)
-
-        {:reply, {:error, error}, state}
-
-      result ->
-        {:selected, _, query_id} = :odbc.sql_query(pid, @last_query_id)
-
-        :odbc.sql_query(pid, @close_transaction)
-
-        {:reply, Tuple.append(result, query_id), state}
-    end
+    result
   end
 
   @impl GenServer

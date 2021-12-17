@@ -114,8 +114,24 @@ defmodule Snowflex.DBConnection.Protocol do
   end
 
   # TODO add updated result clause
+  defp do_query(%Query{} = query, [], opts, state) do
+    case Server.sql_query(state.pid, query.statement, opts) do
+      {:selected, columns, rows, _} ->
+        result = %Result{
+          columns: Enum.map(columns, &to_string(&1)),
+          rows: rows,
+          num_rows: Enum.count(rows)
+        }
+
+        {:ok, result, state}
+
+      {:error, reason} ->
+        {:error, reason, state}
+    end
+  end
+
   defp do_query(%Query{} = query, params, opts, state) do
-    case Server.query(state.pid, query.statement, params, opts, true) do
+    case Server.param_query(state.pid, query.statement, params, opts) do
       {:selected, columns, rows, _} ->
         result = %Result{
           columns: Enum.map(columns, &to_string(&1)),

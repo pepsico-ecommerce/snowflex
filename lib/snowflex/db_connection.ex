@@ -49,21 +49,14 @@ defmodule Snowflex.DBConnection do
         DBConnection.start_link(Protocol, opts)
       end
 
-      def execute(statement) when is_binary(statement) do
-        case prepare_execute("", statement) do
-          {:ok, _query, result} -> {:ok, result}
-          {:error, error} -> {:error, error}
-        end
-      end
-
-      def execute(statement, params) when is_binary(statement) and is_list(params) do
+      def execute(statement, params \\ []) when is_binary(statement) and is_list(params) do
         case prepare_execute("", statement, params) do
           {:ok, _query, result} -> {:ok, result}
           {:error, error} -> {:error, error}
         end
       end
 
-      defp prepare_execute(name, statement, params \\ [], opts \\ []) do
+      defp prepare_execute(name, statement, params, opts \\ []) do
         query = %Query{name: name, statement: statement}
         DBConnection.prepare_execute(@name, query, params, opts)
       end
