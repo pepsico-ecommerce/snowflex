@@ -9,7 +9,7 @@ defmodule Snowflex.DBConnection.Protocol do
     Server
   }
 
-  defstruct pid: nil, status: :idle, conn_opts: []
+  defstruct pid: nil, status: :idle, conn_opts: [], worker: Server
 
   @type state :: %__MODULE__{
           pid: pid(),
@@ -22,14 +22,15 @@ defmodule Snowflex.DBConnection.Protocol do
   @impl DBConnection
   def connect(opts) do
     connection_args = Keyword.fetch!(opts, :connection)
-    conn_str = connection_string(connection_args)
+    worker = Keyword.get(opts, :worker, Server)
 
-    {:ok, pid} = Server.start_link(conn_str, opts)
+    {:ok, pid} = worker.start_link(opts)
 
     state = %__MODULE__{
       pid: pid,
       status: :idle,
-      conn_opts: connection_args
+      conn_opts: connection_args,
+      worker: worker
     }
 
     {:ok, state}
@@ -46,7 +47,7 @@ defmodule Snowflex.DBConnection.Protocol do
     query = %Query{name: "ping", statement: "SELECT /* snowflex:heartbeat */ 1;"}
 
     case do_query(query, [], [], state) do
-      {:ok, _, new_state} -> {:ok, new_state}
+      {:ok, _, _, new_state} -> {:ok, new_state}
       {:error, reason, new_state} -> {:disconnect, reason, new_state}
     end
   end
@@ -104,45 +105,47 @@ defmodule Snowflex.DBConnection.Protocol do
 
   ## Helpers
 
-  defp connection_string(connection_args) do
-    driver = Application.get_env(:snowflex, :driver)
-    connection_args = [{:driver, driver} | connection_args]
+  defp do_query(%Query{} = query, [], opts, %{worker: worker} = state) do
+    case worker.sql_query(state.pid, query.statement, opts) do
+      {:ok, {:selected, columns, rows}} ->
+        result = parse_result(columns, rows)
+        {:ok, query, result, state}
 
-    Enum.reduce(connection_args, "", fn {key, value}, acc ->
-      acc <> "#{key}=#{value};"
-    end)
-  end
+      {:ok, {:selected, columns, rows, _}} ->
+        result = parse_result(columns, rows)
+        {:ok, query, result, state}
 
-  # TODO add updated result clause
-  defp do_query(%Query{} = query, [], opts, state) do
-    case Server.sql_query(state.pid, query.statement, opts) do
-      {:selected, columns, rows, _} ->
-        result = %Result{
-          columns: Enum.map(columns, &to_string(&1)),
-          rows: rows,
-          num_rows: Enum.count(rows)
-        }
-
-        {:ok, result, state}
+      {:ok, result} ->
+        {:ok, query, result, state}
 
       {:error, reason} ->
         {:error, reason, state}
     end
   end
 
-  defp do_query(%Query{} = query, params, opts, state) do
-    case Server.param_query(state.pid, query.statement, params, opts) do
-      {:selected, columns, rows, _} ->
-        result = %Result{
-          columns: Enum.map(columns, &to_string(&1)),
-          rows: rows,
-          num_rows: Enum.count(rows)
-        }
+  defp do_query(%Query{} = query, params, opts, %{worker: worker} = state) do
+    case worker.param_query(state.pid, query.statement, params, opts) do
+      {:ok, {:selected, columns, rows}} ->
+        result = parse_result(columns, rows)
+        {:ok, query, result, state}
 
-        {:ok, result, state}
+      {:ok, {:selected, columns, rows, _}} ->
+        result = parse_result(columns, rows)
+        {:ok, query, result, state}
+
+      {:ok, result} ->
+        {:ok, query, result, state}
 
       {:error, reason} ->
         {:error, reason, state}
     end
+  end
+
+  defp parse_result(columns, rows) do
+    %Result{
+      columns: Enum.map(columns, &to_string(&1)),
+      rows: rows,
+      num_rows: Enum.count(rows)
+    }
   end
 end

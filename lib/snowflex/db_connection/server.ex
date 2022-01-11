@@ -20,8 +20,11 @@ defmodule Snowflex.DBConnection.Server do
   @doc """
   Starts the connection process to the ODBC driver.
   """
-  @spec start_link(binary(), Keyword.t()) :: {:ok, pid()}
-  def start_link(conn_str, opts) do
+  @spec start_link(Keyword.t()) :: {:ok, pid()}
+  def start_link(opts) do
+    connection_args = Keyword.fetch!(opts, :connection)
+    conn_str = connection_string(connection_args)
+
     GenServer.start_link(__MODULE__, [{:conn_str, to_charlist(conn_str)} | opts])
   end
 
@@ -33,11 +36,11 @@ defmodule Snowflex.DBConnection.Server do
   `opts` are options to be passed on to `:odbc`
   """
   @spec sql_query(pid(), iodata(), Keyword.t()) ::
-          {:selected, [binary()], [tuple()]}
-          | {:selected, [binary()], [tuple()], [{binary()}]}
-          | {:updated, non_neg_integer()}
+          {:ok, {:selected, [binary()], [tuple()]}}
+          | {:ok, {:selected, [binary()], [tuple()], [{binary()}]}}
+          | {:ok, {:updated, non_neg_integer()}}
           | {:error, Error.t()}
-  def sql_query(pid, statement, opts) do
+  def sql_query(pid, statement, opts \\ []) do
     if Process.alive?(pid) do
       statement = IO.iodata_to_binary(statement)
       timeout = Keyword.get(opts, :timeout, @timeout)
@@ -57,11 +60,11 @@ defmodule Snowflex.DBConnection.Server do
   `opts` are options to be passed on to `:odbc`
   """
   @spec param_query(pid(), iodata(), Keyword.t(), Keyword.t()) ::
-          {:selected, [binary()], [tuple()]}
-          | {:selected, [binary()], [tuple()], [{binary()}]}
-          | {:updated, non_neg_integer()}
+          {:ok, {:selected, [binary()], [tuple()]}}
+          | {:ok, {:selected, [binary()], [tuple()], [{binary()}]}}
+          | {:ok, {:updated, non_neg_integer()}}
           | {:error, Error.t()}
-  def param_query(pid, statement, params, opts) do
+  def param_query(pid, statement, params, opts \\ []) do
     if Process.alive?(pid) do
       statement = IO.iodata_to_binary(statement)
       timeout = Keyword.get(opts, :timeout, @timeout)
@@ -176,4 +179,15 @@ defmodule Snowflex.DBConnection.Server do
   @impl GenServer
   def terminate(_reason, %{state: :not_connected} = _state), do: :ok
   def terminate(_reason, %{pid: pid} = _state), do: :odbc.disconnect(pid)
+
+  ## Helpers
+
+  defp connection_string(connection_args) do
+    driver = Application.get_env(:snowflex, :driver)
+    connection_args = [{:driver, driver} | connection_args]
+
+    Enum.reduce(connection_args, "", fn {key, value}, acc ->
+      acc <> "#{key}=#{value};"
+    end)
+  end
 end

@@ -46,6 +46,8 @@ defmodule Snowflex.DBConnection do
       end
 
       def start_link(opts) do
+        opts = Keyword.put(opts, :name, @name)
+
         DBConnection.start_link(Protocol, opts)
       end
 
