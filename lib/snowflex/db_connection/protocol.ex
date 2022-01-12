@@ -14,7 +14,8 @@ defmodule Snowflex.DBConnection.Protocol do
   @type state :: %__MODULE__{
           pid: pid(),
           status: :idle,
-          conn_opts: Keyword.t()
+          conn_opts: Keyword.t(),
+          worker: Server | any()
         }
 
   ## DBConnection Callbacks
@@ -145,7 +146,8 @@ defmodule Snowflex.DBConnection.Protocol do
     %Result{
       columns: Enum.map(columns, &to_string(&1)),
       rows: rows,
-      num_rows: Enum.count(rows)
+      num_rows: Enum.count(rows),
+      success: true
     }
   end
 end

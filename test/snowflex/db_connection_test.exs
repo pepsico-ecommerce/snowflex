@@ -15,12 +15,12 @@ defmodule Snowflex.DBConnectionTest do
       GenServer.start_link(__MODULE__, nil, [])
     end
 
-    def sql_query(pid, statement, _opts) do
-      GenServer.call(pid, {:sql_query, %{statement: statement}}, 1000)
+    def sql_query(pid, query, _opts) do
+      GenServer.call(pid, {:sql_query, query}, 1000)
     end
 
-    def param_query(pid, statement, params, _opts) do
-      GenServer.call(pid, {:param_query, %{statement: statement, params: params}}, 1000)
+    def param_query(pid, query, params, _opts) do
+      GenServer.call(pid, {:param_query, query, params}, 1000)
     end
 
     # Callbacks
@@ -38,7 +38,7 @@ defmodule Snowflex.DBConnectionTest do
     end
 
     def handle_call({:param_query, "insert " <> _, _}, _from, state) do
-      {:reply, {:ok, {:updated, 123}}, state}
+      {:reply, {:ok, {:updated, 456}}, state}
     end
 
     def handle_call({:param_query, _, _}, _from, state) do
@@ -46,31 +46,33 @@ defmodule Snowflex.DBConnectionTest do
     end
   end
 
+  setup_all do
+    start_supervised!(SnowflakeDBConnection)
+
+    :ok
+  end
+
   describe "execute/1" do
     test "should execute a sql query" do
-      start_supervised!(SnowflakeDBConnection)
-
-      assert {:ok, _result} = SnowflakeDBConnection.execute("my query")
+      assert {:ok, result} = SnowflakeDBConnection.execute("my query")
+      assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeDBConnection.process_result(result)
     end
 
     test "should execute an insert query" do
-      start_supervised!(SnowflakeDBConnection)
-
-      assert {:updated, 123} == SnowflakeDBConnection.execute("insert query")
+      assert {:ok, result} = SnowflakeDBConnection.execute("insert query")
+      assert {:updated, 123} == SnowflakeDBConnection.process_result(result)
     end
   end
 
   describe "execute/2" do
     test "should execute a param query" do
-      start_supervised!(SnowflakeDBConnection)
-
-      assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeDBConnection.execute("my query", [])
+      assert {:ok, result} = SnowflakeDBConnection.execute("my query", [])
+      assert [%{"col" => 1}, %{"col" => 2}] == SnowflakeDBConnection.process_result(result)
     end
 
     test "should execute an insert param query" do
-      start_supervised!(SnowflakeDBConnection)
-
-      assert {:updated, 123} == SnowflakeDBConnection.execute("insert query", [])
+      assert {:ok, result} = SnowflakeDBConnection.execute("insert query", ["params"])
+      assert {:updated, 456} == SnowflakeDBConnection.process_result(result)
     end
   end
 end

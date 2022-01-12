@@ -18,7 +18,8 @@ defmodule Snowflex.DBConnection do
 
   alias Snowflex.DBConnection.{
     Protocol,
-    Query
+    Query,
+    Result
   }
 
   @doc false
@@ -38,17 +39,12 @@ defmodule Snowflex.DBConnection do
 
         opts =
           Keyword.merge(config,
+            name: @name,
             timeout: @timeout,
             connection: connection
           )
 
         DBConnection.child_spec(Protocol, opts)
-      end
-
-      def start_link(opts) do
-        opts = Keyword.put(opts, :name, @name)
-
-        DBConnection.start_link(Protocol, opts)
       end
 
       def execute(statement, params \\ []) when is_binary(statement) and is_list(params) do
@@ -57,6 +53,8 @@ defmodule Snowflex.DBConnection do
           {:error, error} -> {:error, error}
         end
       end
+
+      defdelegate process_result(result, opts \\ [map_nulls_to_nil?: true]), to: Result
 
       defp prepare_execute(name, statement, params, opts \\ []) do
         query = %Query{name: name, statement: statement}
