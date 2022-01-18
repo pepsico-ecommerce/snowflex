@@ -108,15 +108,8 @@ defmodule Snowflex.DBConnection.Protocol do
 
   defp do_query(%Query{} = query, [], opts, %{worker: worker} = state) do
     case worker.sql_query(state.pid, query.statement, opts) do
-      {:ok, {:selected, columns, rows}} ->
-        result = parse_result(columns, rows)
-        {:ok, query, result, state}
-
-      {:ok, {:selected, columns, rows, _}} ->
-        result = parse_result(columns, rows)
-        {:ok, query, result, state}
-
       {:ok, result} ->
+        result = parse_result(result, query)
         {:ok, query, result, state}
 
       {:error, reason} ->
@@ -126,15 +119,8 @@ defmodule Snowflex.DBConnection.Protocol do
 
   defp do_query(%Query{} = query, params, opts, %{worker: worker} = state) do
     case worker.param_query(state.pid, query.statement, params, opts) do
-      {:ok, {:selected, columns, rows}} ->
-        result = parse_result(columns, rows)
-        {:ok, query, result, state}
-
-      {:ok, {:selected, columns, rows, _}} ->
-        result = parse_result(columns, rows)
-        {:ok, query, result, state}
-
       {:ok, result} ->
+        result = parse_result(result, query)
         {:ok, query, result, state}
 
       {:error, reason} ->
@@ -142,12 +128,22 @@ defmodule Snowflex.DBConnection.Protocol do
     end
   end
 
-  defp parse_result(columns, rows) do
+  defp parse_result({:selected, columns, rows, _}, query),
+    do: parse_result({:selected, columns, rows}, query)
+
+  defp parse_result({:selected, columns, rows}, query) do
+    parse_result(columns, rows, query)
+  end
+
+  defp parse_result(result, _query), do: result
+
+  defp parse_result(columns, rows, query) do
     %Result{
       columns: Enum.map(columns, &to_string(&1)),
       rows: rows,
       num_rows: Enum.count(rows),
-      success: true
+      success: true,
+      statement: query.statement
     }
   end
 end

@@ -96,3 +96,54 @@ def deps do
   ]
 end
 ```
+
+## DBConnection Support
+
+[DBConnection](https://github.com/elixir-ecto/db_connection) support is currently in experimental phase, setting it up is very similar to current implementation with the expection of configuration options and obtaining the same results will require an extra step:
+
+### Configuration:
+
+Setting a Module to hold the connection is very similar, but instead you'll use `Snowflex.DBConnection`:
+
+Example:
+
+```elixir
+defmodule MyApp.SnowflakeConnection do
+  use Snowflex.DBConnection,
+    otp_app: :my_app,
+    timeout: :timer.minutes(5)
+end
+```
+
+```elixir
+config :my_app, MyApp.SnowflakeConnection,
+  pool_size: 5, # the connection pool size
+  worker: MyApp.CustomWorker, # defaults to Snowflex.DBConnection.Server
+  connection: [
+      role: "PROD",
+      warehouse: System.get_env("SNOWFLAKE_POS_WH"),
+      uid: System.get_env("SNOWFLAKE_POS_UID"),
+      pwd: System.get_env("SNOWFLAKE_POS_PWD")
+    ]
+```
+
+### Usage:
+
+After setup, you can use your connection to query:
+
+```elixir
+alias Snowflex.DBConnection.Result
+
+{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query")
+{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query", ["my params"])
+```
+
+As you can see we now receive an `{:ok, result}` tuple, to get results as expected with current implementation, we need to call `process_result/1`:
+
+```elixir
+alias Snowflex.DBConnection.Result
+
+{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query")
+
+[%{"col" => 1}, %{"col" => 2}] = SnowflakeDBConnection.process_result(result)
+```
