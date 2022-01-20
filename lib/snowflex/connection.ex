@@ -4,13 +4,14 @@ defmodule Snowflex.Connection do
 
   ## Definition
 
-  When used, the connection expects the `:otp_app` option. You may also define a standard timeout. This will default to 60 seconds.
+  When used, the connection expects the `:otp_app` option. You may also define
+  a standard timeout. This will default to 60 seconds.
 
   If `keep_alive?` is set to `true`, each worker in the connection pool will
   periodically send a dummy query to Snowflake to keep the authenticated
   session from expiring.
 
-  ```
+  ```elixir
   defmodule SnowflakeConnection do
     use Snowflex.Connection,
       otp_app: :my_app,
@@ -29,31 +30,31 @@ defmodule Snowflex.Connection do
       min: 5
     ],
     connection: [
-        server: "snowflex.us-east-8.snowflakecomputing.com",
-        role: "DEV",
-        warehouse: "CUSTOMER_DEV_WH"
-      ]
+      server: "snowflex.us-east-8.snowflakecomputing.com",
+      role: "DEV",
+      warehouse: "CUSTOMER_DEV_WH"
+    ]
   ```
 
-  The connection will default to using the `Snowflex.Worker` module. You are able to define a diferent one for testing/development purposes in your configurations as well.
+  The connection will default to using the `Snowflex.Worker` module. You are able to
+  define a diferent one for testing/development purposes in your configurations as well.
 
   ```
   # config/dev.exs
-    config :my_app, SnowflakeConnection,
-      size: [
-        max: 1,
-        min: 1
-      ],
-      worker: MyApp.MockWorker
+  config :my_app, SnowflakeConnection,
+    size: [
+      max: 1,
+      min: 1
+    ],
+    worker: MyApp.MockWorker
   ```
 
   ## Usage
 
   Ensure the connection is started as part of your application.
 
-  ```
+  ```elixir
   defmodule MyApp.Application do
-
     def start(_, _) do
       ...
 
@@ -106,6 +107,10 @@ defmodule Snowflex.Connection do
         timeout: timeout,
         map_nulls_to_nil?: map_nulls_to_nil?
       ]
+
+      # import param helpers for active transport
+      @transport Snowflex.transport()
+      import @transport, only: [int_param: 1, string_param: 1, string_param: 2]
 
       def child_spec(_) do
         config = Application.get_env(@otp_app, __MODULE__, [])

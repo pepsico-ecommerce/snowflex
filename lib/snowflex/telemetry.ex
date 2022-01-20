@@ -8,13 +8,17 @@ defmodule Snowflex.Telemetry do
   @param_start [:snowflex, :param_query, :start]
   @param_stop [:snowflex, :param_query, :stop]
 
+  @default_metadata %{
+    transport: Application.compile_env(:snowflex, :transport, :odbc)
+  }
+
   @spec sql_start(map(), map()) :: integer()
   def sql_start(metadata \\ %{}, measurements \\ %{}) do
     start_time = System.monotonic_time()
 
     measurements = Map.merge(measurements, %{system_time: System.system_time()})
 
-    :telemetry.execute(@sql_start, measurements, metadata)
+    emit(@sql_start, measurements, metadata)
 
     start_time
   end
@@ -25,7 +29,7 @@ defmodule Snowflex.Telemetry do
 
     measurements = Map.merge(measurements, %{duration: end_time - start_time})
 
-    :telemetry.execute(@sql_stop, measurements, metadata)
+    emit(@sql_stop, measurements, metadata)
   end
 
   @spec param_start(map(), map()) :: integer()
@@ -34,7 +38,7 @@ defmodule Snowflex.Telemetry do
 
     measurements = Map.merge(measurements, %{system_time: System.system_time()})
 
-    :telemetry.execute(@param_start, measurements, metadata)
+    emit(@param_start, measurements, metadata)
 
     start_time
   end
@@ -45,6 +49,11 @@ defmodule Snowflex.Telemetry do
 
     measurements = Map.merge(measurements, %{duration: end_time - start_time})
 
-    :telemetry.execute(@param_stop, measurements, metadata)
+    emit(@param_stop, measurements, metadata)
+  end
+
+  defp emit(event, measurements, metadata) do
+    metadata = Map.merge(metadata, @default_metadata)
+    :telemetry.execute(event, measurements, metadata)
   end
 end

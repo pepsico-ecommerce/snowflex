@@ -65,13 +65,11 @@ defmodule Snowflex.Worker do
 
   @impl GenServer
   def handle_info({:start, connection_args, keep_alive?, heartbeat_interval}, %{backoff: backoff}) do
-    conn_str = connection_string(connection_args)
-
-    case :odbc.connect(conn_str, []) do
-      {:ok, pid} ->
+    case Snowflex.transport().connect(connection: connection_args) do
+      {:ok, conn} ->
         state =
           %{
-            pid: pid,
+            conn: conn,
             backoff: :backoff.succeed(backoff),
             state: :connected,
             keep_alive?: keep_alive?,
@@ -106,27 +104,18 @@ defmodule Snowflex.Worker do
 
   # Helpers
 
-  defp connection_string(connection_args) do
-    driver = Application.get_env(:snowflex, :driver)
-    connection_args = [{:driver, driver} | connection_args]
-
-    connection_args
-    |> Enum.reduce("", fn {key, value}, acc -> acc <> "#{key}=#{value};" end)
-    |> to_charlist()
-  end
-
   defp do_sql_query(%{state: :not_connected} = state, _query) do
     {{:error, :not_connected}, state}
   end
 
-  defp do_sql_query(%{pid: pid} = state, query) do
-    case :odbc.sql_query(pid, to_charlist(query)) do
+  defp do_sql_query(%{conn: conn} = state, query) do
+    case Snowflex.transport().sql_query(conn, query) do
+      {:ok, result} ->
+        {{:ok, result}, state}
+
       {:error, reason} ->
         Logger.warn("Unable to execute query: #{reason}")
         {{:error, reason}, state}
-
-      result ->
-        {{:ok, result}, state}
     end
   end
 
@@ -134,17 +123,16 @@ defmodule Snowflex.Worker do
     {{:error, :not_connected}, state}
   end
 
-  defp do_param_query(%{pid: pid} = state, query, params) do
-    ch_query = to_charlist(query)
-    ch_params = Params.prepare(params)
+  defp do_param_query(%{conn: conn} = state, query, params) do
+    params = Params.prepare(params)
 
-    case :odbc.param_query(pid, ch_query, ch_params) do
+    case Snowflex.transport().param_query(conn, query, params) do
+      {:ok, result} ->
+        {{:ok, result}, state}
+
       {:error, reason} ->
         Logger.warn("Unable to execute query: #{reason}")
         {{:error, reason}, state}
-
-      result ->
-        {{:ok, result}, state}
     end
   end
 

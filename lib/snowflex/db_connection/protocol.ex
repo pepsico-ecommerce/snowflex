@@ -3,11 +3,8 @@ defmodule Snowflex.DBConnection.Protocol do
 
   require Logger
 
-  alias Snowflex.DBConnection.{
-    Query,
-    Result,
-    Server
-  }
+  alias Snowflex.Result
+  alias Snowflex.DBConnection.{Query, Server}
 
   defstruct pid: nil, status: :idle, conn_opts: [], worker: Server
 
@@ -108,46 +105,15 @@ defmodule Snowflex.DBConnection.Protocol do
 
   defp do_query(%Query{} = query, [], opts, %{worker: worker} = state) do
     case worker.sql_query(state.pid, query.statement, opts) do
-      {:ok, {:selected, columns, rows}} ->
-        result = parse_result(columns, rows)
-        {:ok, query, result, state}
-
-      {:ok, {:selected, columns, rows, _}} ->
-        result = parse_result(columns, rows)
-        {:ok, query, result, state}
-
-      {:ok, result} ->
-        {:ok, query, result, state}
-
-      {:error, reason} ->
-        {:error, reason, state}
+      {:ok, result} -> {:ok, query, result, state}
+      {:error, reason} -> {:error, reason, state}
     end
   end
 
   defp do_query(%Query{} = query, params, opts, %{worker: worker} = state) do
     case worker.param_query(state.pid, query.statement, params, opts) do
-      {:ok, {:selected, columns, rows}} ->
-        result = parse_result(columns, rows)
-        {:ok, query, result, state}
-
-      {:ok, {:selected, columns, rows, _}} ->
-        result = parse_result(columns, rows)
-        {:ok, query, result, state}
-
-      {:ok, result} ->
-        {:ok, query, result, state}
-
-      {:error, reason} ->
-        {:error, reason, state}
+      {:ok, result} -> {:ok, query, result, state}
+      {:error, reason} -> {:error, reason, state}
     end
-  end
-
-  defp parse_result(columns, rows) do
-    %Result{
-      columns: Enum.map(columns, &to_string(&1)),
-      rows: rows,
-      num_rows: Enum.count(rows),
-      success: true
-    }
   end
 end

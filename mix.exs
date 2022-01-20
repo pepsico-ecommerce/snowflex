@@ -16,12 +16,19 @@ defmodule Snowflex.MixProject do
 
   # Run "mix help compile.app" to learn about applications.
   def application do
-    [
-      extra_applications: [:logger, :odbc],
-      env: [
-        driver: "/usr/lib/snowflake/odbc/lib/libSnowflake.so"
-      ]
-    ]
+    case Application.get_env(:snowflex, :transport, :odbc) do
+      :odbc ->
+        [
+          extra_applications: [:logger, :odbc],
+          env: [driver: "/usr/lib/snowflake/odbc/lib/libSnowflake.so"]
+        ]
+
+      :http ->
+        [extra_applications: [:logger]]
+
+      transport ->
+        raise "unrecognized transport #{inspect(transport)} configured for :snowflex"
+    end
   end
 
   defp description do
@@ -43,12 +50,15 @@ defmodule Snowflex.MixProject do
     [
       {:poolboy, "~> 1.5.1"},
       {:backoff, "~> 1.1.6"},
-      {:ecto, "~> 3.0"},
+      {:ecto, "~> 3.0", optional: true},
       {:db_connection, "~> 2.4"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:ex_doc, "~> 0.21", only: :dev, runtime: false},
-      {:meck, "~> 0.9", only: :test}
+      {:meck, "~> 0.9", only: :test},
+      {:tesla, "~> 1.4", optional: true},
+      {:jason, "~> 1.3", optional: true},
+      {:hackney, "~> 1.18", optional: true}
     ]
   end
 end
