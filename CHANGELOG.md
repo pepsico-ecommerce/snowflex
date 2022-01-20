@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2022-01-19
+
+### Added
+
+- General improvements, add DBConnection adapter [#32](https://github.com/pepsico-ecommerce/snowflex/pull/32)
+
 ## [0.4.5] - 2021-10-29
 
 ### Added
