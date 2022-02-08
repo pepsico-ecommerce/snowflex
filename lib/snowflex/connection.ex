@@ -128,7 +128,8 @@ defmodule Snowflex.Connection do
         :poolboy.child_spec(@name, opts,
           connection_args: connection,
           keep_alive?: @keep_alive?,
-          heartbeat_interval: @heartbeat_interval
+          heartbeat_interval: @heartbeat_interval,
+          pool_name: @name
         )
       end
 
@@ -140,6 +141,16 @@ defmodule Snowflex.Connection do
       @impl Snowflex.Connection
       def execute(query, params) when is_binary(query) and is_list(params) do
         Snowflex.param_query(@name, query, params, @query_opts)
+      end
+
+      @impl Snowflex.Connection
+      def stream(query) when is_binary(query) do
+        Snowflex.stream(@name, query, @query_opts)
+      end
+
+      @impl Snowflex.Connection
+      def stream(query, fun) when is_binary(query) do
+        Snowflex.stream(@name, query, fun, @query_opts)
       end
     end
   end
@@ -157,4 +168,7 @@ defmodule Snowflex.Connection do
   """
   @callback execute(query :: String.t(), params :: list(Snowflex.query_param())) ::
               Snowflex.sql_data() | {:error, any} | {:updated, integer()}
+
+  @callback stream(query :: String.t(), function :: function()) :: Stream.t() | {:error, any}
+  @callback stream(query :: String.t()) :: Stream.t() | {:error, any}
 end

@@ -6,6 +6,7 @@ defmodule Snowflex.Worker do
   use GenServer
 
   alias Snowflex.Params
+  alias Snowflex.Results
   alias Snowflex.Telemetry
 
   @timeout :timer.seconds(60)
@@ -23,15 +24,28 @@ defmodule Snowflex.Worker do
     GenServer.call(pid, {:param_query, query, params}, timeout)
   end
 
+  @spec stream(atom | pid | {atom, any} | {:via, atom, any}, any, :infinity | non_neg_integer) ::
+          any
+  def stream(pid, query, timeout \\ @timeout)
+
+  def stream(pid, query, timeout) do
+    stream(pid, query, &default_fn/1, timeout)
+  end
+
+  def stream(pid, query, fun, timeout) do
+    GenServer.call(pid, {:stream, query, fun}, timeout)
+  end
+
   ## GENSERVER CALL BACKS
 
   @impl GenServer
   def init(
         connection_args: connection_args,
         keep_alive?: keep_alive?,
-        heartbeat_interval: heartbeat_interval
+        heartbeat_interval: heartbeat_interval,
+        pool_name: pool_name
       ) do
-    send(self(), {:start, connection_args, keep_alive?, heartbeat_interval})
+    send(self(), {:start, connection_args, keep_alive?, heartbeat_interval, pool_name})
     {:ok, %{backoff: :backoff.init(2, 60), state: :not_connected}}
   end
 
@@ -64,7 +78,20 @@ defmodule Snowflex.Worker do
   end
 
   @impl GenServer
-  def handle_info({:start, connection_args, keep_alive?, heartbeat_interval}, %{backoff: backoff}) do
+  def handle_call({:stream, query, fun}, _from, state) do
+    {result, state} =
+      state
+      |> do_stream(query, fun)
+      |> reschedule_heartbeat()
+
+    Process.send_after(self(), :gc, @gc_delay_ms)
+    {:reply, result, state}
+  end
+
+  @impl GenServer
+  def handle_info({:start, connection_args, keep_alive?, heartbeat_interval, pool_name}, %{
+        backoff: backoff
+      }) do
     conn_str = connection_string(connection_args)
 
     case :odbc.connect(conn_str, []) do
@@ -75,7 +102,8 @@ defmodule Snowflex.Worker do
             backoff: :backoff.succeed(backoff),
             state: :connected,
             keep_alive?: keep_alive?,
-            heartbeat_interval: heartbeat_interval
+            heartbeat_interval: heartbeat_interval,
+            pool_name: pool_name
           }
           |> schedule_heartbeat()
 
@@ -86,7 +114,7 @@ defmodule Snowflex.Worker do
 
         Process.send_after(
           self(),
-          {:start, connection_args, keep_alive?, heartbeat_interval},
+          {:start, connection_args, keep_alive?, heartbeat_interval, pool_name},
           backoff |> :backoff.get() |> :timer.seconds()
         )
 
@@ -147,6 +175,39 @@ defmodule Snowflex.Worker do
         {{:ok, result}, state}
     end
   end
+
+  defp do_stream(%{pid: pid} = state, query, fun) do
+    ch_query = to_charlist(query)
+
+    Stream.resource(
+      fn ->
+        {:ok, count} = :odbc.select_count(pid, ch_query)
+        count
+      end,
+      fn count ->
+        if count == 0 do
+          {:halt, count}
+        else
+          res =
+            :odbc.next(pid)
+            |> Results.process([])
+            |> fun.()
+
+          {[res], count - 1}
+        end
+      end,
+      fn values ->
+        :poolboy.checkin(state.pool_name, pid)
+        values
+      end
+    )
+  end
+
+  defp do_stream(%{state: :not_connected} = state, _query, _fun) do
+    {{:error, :not_connected}, state}
+  end
+
+  defp default_fn(n), do: n
 
   defp send_heartbeat(state) do
     Logger.info("sending heartbeat")
