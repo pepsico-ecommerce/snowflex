@@ -179,28 +179,31 @@ defmodule Snowflex.Worker do
   defp do_stream(%{pid: pid} = state, query, fun) do
     ch_query = to_charlist(query)
 
-    Stream.resource(
-      fn ->
-        {:ok, count} = :odbc.select_count(pid, ch_query)
-        count
-      end,
-      fn count ->
-        if count == 0 do
-          {:halt, count}
-        else
-          res =
-            :odbc.next(pid)
-            |> Results.process([])
-            |> fun.()
+    stream =
+      Stream.resource(
+        fn ->
+          {:ok, count} = :odbc.select_count(pid, ch_query)
+          count
+        end,
+        fn count ->
+          if count == 0 do
+            {:halt, count}
+          else
+            res =
+              :odbc.next(pid)
+              |> Results.process([])
+              |> fun.()
 
-          {[res], count - 1}
+            {[res], count - 1}
+          end
+        end,
+        fn values ->
+          :poolboy.checkin(state.pool_name, pid)
+          values
         end
-      end,
-      fn values ->
-        :poolboy.checkin(state.pool_name, pid)
-        values
-      end
-    )
+      )
+
+    {{:ok, stream}, state}
   end
 
   defp do_stream(%{state: :not_connected} = state, _query, _fun) do
