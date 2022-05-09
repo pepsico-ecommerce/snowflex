@@ -44,6 +44,7 @@ defmodule Snowflex.DBConnection.Result do
         data =
           row
           |> elem(index)
+          |> handle_encoding()
           |> to_string_if_charlist()
           |> map_null_to_nil(map_nulls_to_nil?)
 
@@ -56,6 +57,17 @@ defmodule Snowflex.DBConnection.Result do
 
   defp to_string_if_charlist(data) when is_list(data), do: to_string(data)
   defp to_string_if_charlist(data), do: data
+
+  defp handle_encoding(data) when is_list(data) do
+    raw = :erlang.list_to_binary(data)
+
+    case :unicode.characters_to_binary(raw) do
+      utf8 when is_binary(utf8) -> utf8
+      _ -> :unicode.characters_to_binary(raw, :latin1)
+    end
+  end
+
+  defp handle_encoding(data), do: data
 
   defp map_null_to_nil(:null, true), do: nil
   defp map_null_to_nil(data, _), do: data
