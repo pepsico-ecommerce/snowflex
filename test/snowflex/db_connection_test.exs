@@ -29,6 +29,10 @@ defmodule Snowflex.DBConnectionTest do
       {:ok, %{}}
     end
 
+    def handle_call({:sql_query, "return_utf_16"}, _from, state) do
+      {:reply, {:ok, {:selected, ['col'], [{'CVS PharmacyÂ®'}]}}, state}
+    end
+
     def handle_call({:sql_query, "insert " <> _}, _from, state) do
       {:reply, {:ok, {:updated, 123}}, state}
     end
@@ -61,6 +65,14 @@ defmodule Snowflex.DBConnectionTest do
     test "should execute an insert query" do
       assert {:ok, result} = SnowflakeDBConnection.execute("insert query")
       assert {:updated, 123} == SnowflakeDBConnection.process_result(result)
+    end
+
+    test "should execute a sql query with utf-16 artifacts and scrub it" do
+      assert {:ok, %{rows: [{charlist}]}} = SnowflakeDBConnection.execute("return_utf_16")
+      # above we set this to return 'CVS PharmacyÂ®', as we saw in the real world, and then
+      # here we ensure that we just have the ® character
+      string = Enum.into(charlist, <<>>, fn bit -> <<bit>> end)
+      assert string == "CVS Pharmacy®"
     end
   end
 
