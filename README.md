@@ -88,6 +88,37 @@ must have ODBC enabled. The erlang installed by Homebrew does NOT have ODBC supp
 version of erlang does have ODBC support. You will also need the Snowflake ODBC driver installed
 on your machine. You can download this from https://sfc-repo.snowflakecomputing.com/odbc/index.html.
 
+### Apple Silicon
+
+Snowflake has a native `macaarch64 driver` available from
+https://sfc-repo.snowflakecomputing.com/odbc/macaarch64/index.html. However `asdf` stuggles to build
+Erlang with the Homebrew installation of `unixodbc` after Homebrew [changed their installation
+directory](https://github.com/Homebrew/brew/issues/9177) from `/usr/local` to `/opt/homebrew`. The
+locations need to be set in the environment before building with `asdf` like so:
+
+``` sh
+brew install unixodbc
+brew install openssl@1.1
+export KERL_CONFIGURE_OPTIONS="--with-odbc=$(brew --prefix unixodbc) --with-ssl=$(brew --prefix openssl@1.1)"
+export CC="/usr/bin/gcc -I$(brew --prefix unixodbc)/include"
+export LDFLAGS="-L$(brew --prefix unixodbc)/lib"
+asdf install erlang
+unset KERL_CONFIGURE_OPTIONS
+unset CC
+unset LDFLAGS
+```
+
+You will then need to add the following to `/opt/snowflake/snowflakeodbc/lib/simba.snowflake.ini`
+```
+ODBCInstLib=/opt/homebrew/Cellar/unixodbc/2.3.11/lib/libodbcinst.dylib
+```
+
+And finally ensure that your elixir config has the correct driver location
+
+``` elixir
+config :snowflex, driver: "/opt/snowflake/snowflakeodbc/lib/libSnowflake.dylib"
+```
+
 ## Installation
 
 The package can be installed by adding `:snowflex` to your list of dependencies in `mix.exs`:
