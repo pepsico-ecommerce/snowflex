@@ -90,11 +90,23 @@ on your machine. You can download this from https://sfc-repo.snowflakecomputing.
 
 ### Apple Silicon
 
-Snowflake has a native `macaarch64 driver` available from
-https://sfc-repo.snowflakecomputing.com/odbc/macaarch64/index.html. However `asdf` stuggles to build
-Erlang with the Homebrew installation of `unixodbc` after Homebrew [changed their installation
-directory](https://github.com/Homebrew/brew/issues/9177) from `/usr/local` to `/opt/homebrew`. The
-locations need to be set in the environment before building with `asdf` like so:
+Snowflake has a native `macaarch64 driver` available from https://sfc-repo.snowflakecomputing.com/odbc/macaarch64/index.html. However Erlang is unable to find the `unixodbc` files by default after Homebrew [changed their installation directory](https://github.com/Homebrew/brew/issues/9177) from `/usr/local` to `/opt/homebrew`.
+
+We can build Erlang with `asdf` and ensure the correct files included to make sure `odbc.app` is available when running Elixir.
+
+We will need [asdf](https://asdf-vm.com) and [Homebrew](https://brew.sh) installed.
+
+Next, we should first remove any previous installations or builds of Elixir or Erlang to make sure they are not incorrectly targeted by `mix` when we run our applicatoin. This can be done like so:
+
+``` sh
+brew uninstall elixir
+brew uninstall erlang
+asdf uninstall erlang
+rm ~/.asdf/plugins/erlang/kerl-home/otp_builds
+rm ~/.asdf/plugins/erlang/kerl-home/otp_installations
+```
+
+We can now get the neccesary ODBC and OpenSSL files from Brew, set their correct locations in the environment, and build Erlang and Elixir with `asdf` like so:
 
 ``` sh
 brew install unixodbc
@@ -103,6 +115,7 @@ export KERL_CONFIGURE_OPTIONS="--with-odbc=$(brew --prefix unixodbc) --with-ssl=
 export CC="/usr/bin/gcc -I$(brew --prefix unixodbc)/include"
 export LDFLAGS="-L$(brew --prefix unixodbc)/lib"
 asdf install erlang
+asdf install elixir
 unset KERL_CONFIGURE_OPTIONS
 unset CC
 unset LDFLAGS
