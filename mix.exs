@@ -2,7 +2,7 @@ defmodule Snowflex.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/pepsico-ecommerce/snowflex"
-  @version ""0.5.1"
+  @version "0.5.1"
 
   def project do
     [
@@ -43,6 +43,7 @@ defmodule Snowflex.MixProject do
       {:poolboy, "~> 1.5.1"},
       {:backoff, "~> 1.1.6"},
       {:ecto, "~> 3.0"},
+      {:ecto_sql, "~> 3.0"},
       {:db_connection, "~> 2.4"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
@@ -55,7 +56,7 @@ defmodule Snowflex.MixProject do
     [
       extras: [
         "CHANGELOG.md": [],
-        "LICENSE": [title: "License"],
+        LICENSE: [title: "License"],
         "README.md": [title: "Overview"]
       ],
       main: "readme",
