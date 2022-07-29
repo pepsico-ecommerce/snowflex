@@ -1,4 +1,4 @@
-defmodule Snowflex.DBConnection.Query do
+defmodule Snowflex.Query do
   defstruct [
     :ref,
     :name,
@@ -16,7 +16,7 @@ defmodule Snowflex.DBConnection.Query do
   end
 
   defimpl String.Chars do
-    alias Snowflex.DBConnection.Query
+    alias Snowflex.EctoAdapter.Query
 
     def to_string(%{statement: statement}) do
       case statement do

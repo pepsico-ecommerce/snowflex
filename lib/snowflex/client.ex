@@ -1,4 +1,4 @@
-defmodule Snowflex.DBConnection.Server do
+defmodule Snowflex.Client do
   @moduledoc """
   Adapter to Erlang's `:odbc` module.
 
@@ -9,9 +9,7 @@ defmodule Snowflex.DBConnection.Server do
 
   require Logger
 
-  alias Snowflex.DBConnection.Error
-  alias Snowflex.Params
-  alias Snowflex.Telemetry
+  alias Snowflex.EctoAdapter.Error
 
   @timeout :timer.seconds(60)
 
@@ -98,8 +96,6 @@ defmodule Snowflex.DBConnection.Server do
   end
 
   def handle_call({:sql_query, %{statement: statement}}, _from, %{pid: pid} = state) do
-    start_time = Telemetry.sql_start(%{query: statement})
-
     result =
       case :odbc.sql_query(pid, to_charlist(statement)) do
         {:error, reason} ->
@@ -111,8 +107,6 @@ defmodule Snowflex.DBConnection.Server do
         result ->
           {:reply, {:ok, result}, state}
       end
-
-    Telemetry.sql_stop(start_time)
 
     result
   end
@@ -126,24 +120,16 @@ defmodule Snowflex.DBConnection.Server do
         _from,
         %{pid: pid} = state
       ) do
-    start_time = Telemetry.param_start(%{query: statement, params: params})
-    params = Params.prepare(params)
+    case :odbc.param_query(pid, to_charlist(statement), params) do
+      {:error, reason} ->
+        error = Error.exception(reason)
+        Logger.warn("Unable to execute query: #{error.message}")
 
-    result =
-      case :odbc.param_query(pid, to_charlist(statement), params) do
-        {:error, reason} ->
-          error = Error.exception(reason)
-          Logger.warn("Unable to execute query: #{error.message}")
+        {:reply, {:error, error}, state}
 
-          {:reply, {:error, error}, state}
-
-        result ->
-          {:reply, {:ok, result}, state}
-      end
-
-    Telemetry.param_stop(start_time)
-
-    result
+      result ->
+        {:reply, {:ok, result}, state}
+    end
   end
 
   @impl GenServer
