@@ -138,7 +138,14 @@ defmodule Snowflex.Connection do
   defp parse_result(columns, rows, query) do
     %Result{
       columns: Enum.map(columns, &to_string(&1)),
-      rows: rows,
+      rows:
+        Enum.map(rows, fn row ->
+          Tuple.to_list(row)
+          |> Enum.map(fn
+            :null -> nil
+            x -> x
+          end)
+        end),
       num_rows: Enum.count(rows),
       success: true,
       statement: query.statement
