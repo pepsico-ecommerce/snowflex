@@ -31,6 +31,12 @@ defmodule Snowflex do
     end
   end
 
+  # @spec execute(conn(), Snowflex.Query.t(), list(), [option()]) ::
+  # {:ok, MyXQL.Query.t(), MyXQL.Result.t()} | {:error, Exception.t()}
+  def execute(conn, %Snowflex.Query{} = query, params \\ [], opts \\ []) do
+    DBConnection.execute(conn, query, params, opts)
+  end
+
   defp do_query(conn, %Snowflex.Query{} = query, params, options) do
     conn
     |> DBConnection.prepare_execute(query, params, options)
