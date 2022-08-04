@@ -9,4 +9,8 @@ defmodule Snowflex.EctoAdapter do
   def lock_for_migrations(_meta, _opts, _fun) do
     raise "Migrations are not supported"
   end
+
+  def loaders(:integer, type), do: [&int_decode/1, type]
+
+  defp int_decode(int), do: {:ok, String.to_integer(int)}
 end
