@@ -28,10 +28,6 @@ defmodule Snowflex do
       query_type in [:binary, :binary_then_text] ->
         query = %Snowflex.Query{name: "", statement: statement}
         do_query(conn, query, params, options)
-
-      query_type == :text ->
-        query = %Snowflex.TextQuery{statement: statement}
-        do_query(conn, query, params, options)
     end
   end
 
