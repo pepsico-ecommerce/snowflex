@@ -9,7 +9,7 @@ defmodule Snowflex.Client do
 
   require Logger
 
-  alias Snowflex.EctoAdapter.Error
+  alias Snowflex.Error
 
   @timeout :timer.seconds(60)
 

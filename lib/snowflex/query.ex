@@ -16,7 +16,7 @@ defmodule Snowflex.Query do
   end
 
   defimpl String.Chars do
-    alias Snowflex.EctoAdapter.Query
+    alias Snowflex.Query
 
     def to_string(%{statement: statement}) do
       case statement do

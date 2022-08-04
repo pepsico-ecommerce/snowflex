@@ -3,7 +3,7 @@ defmodule Snowflex.Connection do
 
   require Logger
 
-  alias Snowflex.EctoAdapter.{
+  alias Snowflex.{
     Query,
     Result,
     Client
