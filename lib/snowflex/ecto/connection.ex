@@ -103,6 +103,7 @@ defmodule Snowflex.EctoAdapter.Connection do
     where = where(query, sources)
     group_by = group_by(query, sources)
     having = having(query, sources)
+    # qualify = qualify(query, sources)
     window = window(query, sources)
     combinations = combinations(query)
     order_by = order_by(query, sources)
@@ -118,11 +119,13 @@ defmodule Snowflex.EctoAdapter.Connection do
       where,
       group_by,
       having,
+      # qualify,
       window,
       combinations,
       order_by,
       limit,
       offset | lock
+      # row_number | lock
     ]
   end
 
@@ -550,6 +553,15 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp offset(%{offset: %QueryExpr{expr: expr}} = query, sources) do
     [" OFFSET " | expr(expr, sources, query)]
   end
+
+  # defp qualify(%{qualify: nil}, _sources), do: []
+
+  # defp qualify(%{qualify: %QueryExpr{expr: expr}} = query, sources) do
+  #   [" QUALIFY " | expr(expr, sources, query)]
+  # end
+
+  # defp row_number(_,_) do
+  # end
 
   defp combinations(%{combinations: combinations}) do
     Enum.map(combinations, fn
