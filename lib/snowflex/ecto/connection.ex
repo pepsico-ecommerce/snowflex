@@ -436,7 +436,7 @@ defmodule Snowflex.EctoAdapter.Connection do
           [join, " AS " | name]
 
         %JoinExpr{qual: qual} ->
-          error!(query, "MySQL adapter supports only inner joins on #{kind}, got: `#{qual}`")
+          error!(query, "MySQL adapter supports only inner joins on #{kind}, got: '#{qual}'")
       end)
 
     wheres =
@@ -1133,7 +1133,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp comment_expr(_, _), do: []
 
   defp after_expr(nil), do: []
-  defp after_expr(column) when is_atom(column) or is_binary(column), do: " AFTER `#{column}`"
+  defp after_expr(column) when is_atom(column) or is_binary(column), do: " AFTER '#{column}'"
   defp after_expr(_), do: []
 
   defp null_expr(false), do: " NOT NULL"
@@ -1287,11 +1287,11 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp quote_name(name) when is_binary(name) do
-    if String.contains?(name, "`") do
-      error!(nil, "bad literal/field/table name #{inspect(name)} (` is not permitted)")
+    if String.contains?(name, "'") do
+      error!(nil, "bad literal/field/table name #{inspect(name)} (' is not permitted)")
     end
 
-    [?`, name, ?`]
+    [name]
   end
 
   defp quote_names(names), do: intersperse_map(names, ?,, &quote_name/1)
@@ -1303,11 +1303,11 @@ defmodule Snowflex.EctoAdapter.Connection do
     do: quote_table(Atom.to_string(name))
 
   defp quote_table(name) do
-    if String.contains?(name, "`") do
+    if String.contains?(name, "'") do
       error!(nil, "bad table name #{inspect(name)}")
     end
 
-    [?`, name, ?`]
+    [name]
   end
 
   defp intersperse_map(list, separator, mapper, acc \\ [])
@@ -1369,8 +1369,8 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   defp ecto_to_db(type, _query) do
     raise ArgumentError,
-          "unsupported type `#{inspect(type)}`. The type can either be an atom, a string " <>
-            "or a tuple of the form `{:map, t}` where `t` itself follows the same conditions."
+          "unsupported type '#{inspect(type)}'. The type can either be an atom, a string " <>
+            "or a tuple of the form '{:map, t}' where 't' itself follows the same conditions."
   end
 
   defp error!(nil, message) do
