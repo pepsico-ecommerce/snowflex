@@ -53,14 +53,19 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   @impl true
-  def stream(connection, statement, params, options) do
-    IO.inspect(connection, label: "connection")
-    IO.inspect(statement, label: "statement")
-    IO.inspect(params, label: "params")
-    IO.inspect(options, label: "options")
-    query = Snowflex.query(connection, statement, params, options)
-    DBConnection.stream(connection, query, params, options)
-    # raise "not yet implemented"
+  def stream(conn, query, params \\ [], opts \\ [])
+
+  def stream(%DBConnection{} = conn, statement, params, opts) when is_binary(statement) do
+    query = %Snowflex.Query{name: "", statement: statement}
+    opts = Keyword.put_new(opts, :max_rows, 500)
+    IO.inspect(query, label: "QUERY")
+    DBConnection.prepare_stream(conn, query, params, opts)
+  end
+
+  def stream(%DBConnection{} = conn, %Snowflex.Query{} = query, params, opts) do
+    opts = Keyword.put_new(opts, :max_rows, 500)
+    IO.inspect(query, label: "QUERY 2")
+    DBConnection.stream(conn, query, params, opts)
   end
 
   @impl true

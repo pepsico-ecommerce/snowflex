@@ -93,7 +93,8 @@ defmodule Snowflex.Connection do
     case Keyword.get(opts, :auto_commit) do
       :on ->
         # do we need to temporarily disable this? If so when, and how do we know to re-enable it
-        {:ok, %Result{}, state}
+        # this is my first crack at it
+        {:ok, %Result{}, %{state | conn_opts: Keyword.merge(opts, auto_commit: :off)}}
 
       :off ->
         {:ok, %Result{}, state}
@@ -123,6 +124,8 @@ defmodule Snowflex.Connection do
 
   @impl DBConnection
   def handle_declare(_query, _params, _opts, _state) do
+    # OK here is where we need to handle the cursor with next/2 https://www.erlang.org/doc/man/odbc.html#next-2
+    # see myxql here https://github.com/elixir-ecto/myxql/blob/70df6cf2f50d9dcdcc1df6abe9b4615a6acd5fb0/lib/myxql/connection.ex#L187
     throw("not implemeted")
   end
 
