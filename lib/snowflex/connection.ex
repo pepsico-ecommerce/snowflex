@@ -22,9 +22,12 @@ defmodule Snowflex.Connection do
 
   @impl DBConnection
   def connect(opts) do
-    connection_args = Keyword.fetch!(opts, :connection)
+    connection_args =
+      opts
+      |> Keyword.fetch!(:connection)
+      |> set_defaults()
 
-    {:ok, pid} = Client.start_link(opts)
+    {:ok, pid} = Client.start_link(opts |> set_defaults())
 
     state = %__MODULE__{
       pid: pid,
@@ -33,6 +36,11 @@ defmodule Snowflex.Connection do
     }
 
     {:ok, state}
+  end
+
+  defp set_defaults(opts) do
+    [auto_commit: :off, binary_strings: :on, tuple_row: :off, extended_errors: :on]
+    |> Keyword.merge(opts)
   end
 
   @impl DBConnection
@@ -70,36 +78,78 @@ defmodule Snowflex.Connection do
     {:ok, %Result{}, state}
   end
 
-  ## Not implemented Callbacks
-
   @impl DBConnection
-  def handle_begin(_opts, _state) do
-    throw("not implemented")
+  def handle_begin(
+        _opts,
+        %Snowflex.Connection{
+          conn_opts: opts
+        } = state
+      ) do
+    case Keyword.get(opts, :auto_commit) do
+      :on ->
+        # do we need to temporarily disable this? If so when, and how do we know to re-enable it
+        # this is my first crack at it
+        {:ok, %Result{}, %{state | conn_opts: Keyword.merge(opts, auto_commit: :off)}}
+
+      :off ->
+        {:ok, %Result{}, state}
+
+      opt ->
+        # maybe standardize this somewhere
+        {:error,
+         "bad auto_commit config: #{inspect(opt)} is not a valid config. Set to :on or :off"}
+    end
   end
 
   @impl DBConnection
-  def handle_commit(_opts, _state) do
-    throw("not implemented")
+  def handle_commit(opts, %{worker: worker} = state) do
+    case worker.commit(state.pid, :commit, opts) do
+      :ok -> {:ok, nil, state}
+      {:error, reason} -> {:error, reason, state}
+    end
   end
 
   @impl DBConnection
-  def handle_rollback(_opts, _state) do
-    throw("not implemented")
+  def handle_rollback(opts, %{worker: worker} = state) do
+    case worker.commit(state.pid, :rollback, opts) do
+      :ok -> {:ok, nil, state}
+      {:error, reason} -> {:error, reason, state}
+    end
   end
 
   @impl DBConnection
-  def handle_declare(_query, _params, _opts, _state) do
-    throw("not implemeted")
+  def handle_declare(query, _params, _opts, %{worker: worker} = state) do
+    case worker.select_count(state.pid, query) do
+      {:ok, _result} ->
+        {:ok, query, state.pid, state}
+
+      {:error, reason} ->
+        {:error, reason, state}
+    end
   end
 
   @impl DBConnection
-  def handle_deallocate(_query, _cursor, _opts, _state) do
-    throw("not implemeted")
+  def handle_deallocate(_query, _cursor, _opts, state) do
+    {:ok, state.pid, state}
   end
 
   @impl DBConnection
-  def handle_fetch(_query, _cursor, _opts, _state) do
-    throw("not implemeted")
+  def handle_fetch(query, cursor, opts, %{worker: worker} = state) do
+    max_rows = Keyword.get(opts, :max_rows, 500)
+
+    case worker.select(cursor, max_rows) do
+      {:ok, result} ->
+        result = parse_result(result, query)
+
+        if result.rows == [] do
+          {:halt, result, state}
+        else
+          {:cont, result, state}
+        end
+
+      {:error, reason} ->
+        {:error, reason, state}
+    end
   end
 
   ## Helpers
