@@ -10,6 +10,7 @@ defmodule Snowflex.Client do
   require Logger
 
   alias Snowflex.Error
+  alias Snowflex.Protocol
 
   @timeout :timer.seconds(60)
 
@@ -120,6 +121,8 @@ defmodule Snowflex.Client do
         _from,
         %{pid: pid} = state
       ) do
+    params = Protocol.annotate_params(params)
+
     case :odbc.param_query(pid, to_charlist(statement), params) do
       {:error, reason} ->
         error = Error.exception(reason)
