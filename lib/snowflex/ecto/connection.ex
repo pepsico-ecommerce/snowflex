@@ -58,7 +58,9 @@ defmodule Snowflex.EctoAdapter.Connection do
     IO.inspect(statement, label: "statement")
     IO.inspect(params, label: "params")
     IO.inspect(options, label: "options")
-    raise "not yet implemented"
+    query = Snowflex.query(connection, statement, params, options)
+    DBConnection.stream(connection, query, params, options)
+    # raise "not yet implemented"
   end
 
   @impl true
