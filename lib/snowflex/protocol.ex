@@ -3,45 +3,18 @@ defmodule Snowflex.Protocol do
   Provides shared functions for parameter parsing
   """
 
-  @string_types ~w(
-    sql_char
-    sql_wchar
-    sql_varchar
-    sql_wvarchar
-    sql_wlongvarchar
-  )a
-
-  def prepare(params) do
-    Enum.map(params, &prepare_param/1)
+  def annotate_params(params) do
+    Enum.map(params, &annotate_param/1)
   end
 
-  def prepare_param({type, values}) when not is_list(values) do
-    prepare_param({type, [values]})
-  end
+  defp annotate_param(param) when is_integer(param), do: {:sql_integer, [null_or_any(param)]}
 
-  def prepare_param({{type_atom, _size} = type, values}) when type_atom in @string_types do
-    {type, Enum.map(values, &null_or_charlist/1)}
-  end
+  defp annotate_param(param) when is_binary(param),
+    do: {{:sql_varchar, String.length(param)}, [null_or_charlist(param)]}
 
-  def prepare_param({type, values}) do
-    {type, Enum.map(values, &null_or_any/1)}
-  end
+  defp null_or_charlist(nil), do: :null
+  defp null_or_charlist(value), do: to_charlist(value)
 
-  ## Helpers
-
-  defp null_or_charlist(nil) do
-    :null
-  end
-
-  defp null_or_charlist(val) do
-    to_charlist(val)
-  end
-
-  defp null_or_any(nil) do
-    :null
-  end
-
-  defp null_or_any(any) do
-    any
-  end
+  defp null_or_any(nil), do: :null
+  defp null_or_any(value), do: value
 end
