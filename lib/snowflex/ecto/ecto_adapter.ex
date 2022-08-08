@@ -11,6 +11,8 @@ defmodule Snowflex.EctoAdapter do
   end
 
   def loaders(:integer, type), do: [&int_decode/1, type]
+  def loaders(:id, :id), do: [&int_decode/1, :id]
+  def loaders(_, type), do: [type]
 
   defp int_decode(int), do: {:ok, String.to_integer(int)}
 end
