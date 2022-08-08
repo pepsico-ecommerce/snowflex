@@ -22,7 +22,10 @@ defmodule Snowflex.Connection do
 
   @impl DBConnection
   def connect(opts) do
-    connection_args = Keyword.fetch!(opts, :connection)
+    connection_args =
+      opts
+      |> Keyword.fetch!(:connection)
+      |> set_defaults()
 
     {:ok, pid} = Client.start_link(opts)
 
@@ -33,6 +36,12 @@ defmodule Snowflex.Connection do
     }
 
     {:ok, state}
+  end
+
+  defp set_defaults(opts) do
+    # may need to set this some other way
+    [auto_commit: :on, binary_strings: :on, tuple_row: :on, extended_errors: :on]
+    |> Keyword.merge(opts)
   end
 
   @impl DBConnection
@@ -73,18 +82,43 @@ defmodule Snowflex.Connection do
   ## Not implemented Callbacks
 
   @impl DBConnection
-  def handle_begin(_opts, _state) do
-    throw("not implemented")
+  def handle_begin(
+        _opts,
+        %Snowflex.Connection{
+          conn_opts: opts
+        } = state
+      ) do
+    IO.inspect(state, label: "state")
+
+    case Keyword.get(opts, :auto_commit) do
+      :on ->
+        # do we need to temporarily disable this? If so when, and how do we know to re-enable it
+        {:ok, %Result{}, state}
+
+      :off ->
+        {:ok, %Result{}, state}
+
+      opt ->
+        # maybe standardize this somewhere
+        {:error,
+         "bad auto_commit config: #{inspect(opt)} is not a valid config. Set to :on or :off"}
+    end
   end
 
   @impl DBConnection
-  def handle_commit(_opts, _state) do
-    throw("not implemented")
+  def handle_commit(opts, %{worker: worker} = state) do
+    case worker.commit(state.pid, :commit, opts) do
+      {:ok, result} -> {:ok, result, state}
+      {:error, reason} -> {:error, reason, state}
+    end
   end
 
   @impl DBConnection
-  def handle_rollback(_opts, _state) do
-    throw("not implemented")
+  def handle_rollback(opts, %{worker: worker} = state) do
+    case worker.commit(state.pid, :rollback, opts) do
+      {:ok, result} -> {:ok, result, state}
+      {:error, reason} -> {:error, reason, state}
+    end
   end
 
   @impl DBConnection

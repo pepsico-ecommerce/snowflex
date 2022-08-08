@@ -51,6 +51,23 @@ defmodule Snowflex.Client do
   end
 
   @doc """
+  Sends a commit to the ODBC driver.
+
+  `pid` is the `:odbc` process id
+  `mode` is either commit | rollback
+  `opts` are options to be passed on to `:odbc`
+  """
+  @spec commit(pid(), :commit | :rollback, Keyword.t()) :: :ok | {:error, Error.t()}
+  def commit(pid, mode, opts \\ []) do
+    if Process.alive?(pid) do
+      timeout = Keyword.get(opts, :timeout, @timeout)
+      GenServer.call(pid, {:commit, mode}, timeout)
+    else
+      {:error, %Error{message: :no_connection}}
+    end
+  end
+
+  @doc """
   Sends a parametrized query to the ODBC driver.
 
   `pid` is the `:odbc` process id
@@ -132,6 +149,23 @@ defmodule Snowflex.Client do
 
       result ->
         {:reply, {:ok, result}, state}
+    end
+  end
+
+  def handle_call({:commit, _mode}, _from, %{state: :not_connected} = state) do
+    {:reply, {:error, :not_connected}, state}
+  end
+
+  def handle_call({:commit, commit_mode}, _from, %{pid: pid} = state) do
+    case :odbc.commit(pid, commit_mode) do
+      {:error, reason} ->
+        error = Error.exception(reason)
+        Logger.warn("Commit failed: #{error.message}")
+
+        {:reply, {:error, error}, state}
+
+      :ok ->
+        {:reply, {:ok, "success", state}}
     end
   end
 

@@ -53,7 +53,11 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   @impl true
-  def stream(_connection, _statement, _params, _options) do
+  def stream(connection, statement, params, options) do
+    IO.inspect(connection, label: "connection")
+    IO.inspect(statement, label: "statement")
+    IO.inspect(params, label: "params")
+    IO.inspect(options, label: "options")
     raise "not yet implemented"
   end
 
