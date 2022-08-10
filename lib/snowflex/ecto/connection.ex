@@ -104,12 +104,11 @@ defmodule Snowflex.EctoAdapter.Connection do
     group_by = group_by(query, sources)
     having = having(query, sources)
     # qualify = qualify(query, sources)
-    window = window(query, sources)
+    _window = window(query, sources)
     combinations = combinations(query)
     order_by = order_by(query, sources)
     limit = limit(query, sources)
     offset = offset(query, sources)
-    lock = lock(query, sources)
 
     [
       cte,
@@ -120,11 +119,10 @@ defmodule Snowflex.EctoAdapter.Connection do
       group_by,
       having,
       # qualify,
-      window,
       combinations,
       order_by,
       limit,
-      offset | lock
+      offset
       # row_number | lock
     ]
   end
@@ -134,7 +132,7 @@ defmodule Snowflex.EctoAdapter.Connection do
     %{from: %{source: source}, select: select} = query
 
     if select do
-      error!(nil, ":select is not supported in update_all by MySQL")
+      error!(nil, ":select is not supported in update_all by Snowflake")
     end
 
     sources = create_names(query, [])
@@ -158,7 +156,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   @impl true
   def delete_all(query) do
     if query.select do
-      error!(nil, ":select is not supported in delete_all by MySQL")
+      error!(nil, ":select is not supported in delete_all by Snowflake")
     end
 
     sources = create_names(query, [])
@@ -187,15 +185,15 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, []) do
-    error!(nil, ":returning is not supported in insert/insert_all by MySQL")
+    error!(nil, ":returning is not supported in insert/insert_all by Snowflake")
   end
 
   def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, _placeholders) do
-    error!(nil, ":placeholders is not supported by MySQL")
+    error!(nil, ":placeholders is not supported by Snowflake")
   end
 
   defp on_conflict({_, _, [_ | _]}, _header) do
-    error!(nil, ":conflict_target is not supported in insert/insert_all by MySQL")
+    error!(nil, ":conflict_target is not supported in insert/insert_all by Snowflake")
   end
 
   defp on_conflict({:raise, _, []}, _header) do
@@ -224,7 +222,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp on_conflict({_query, _, []}, _header) do
     error!(
       nil,
-      "Using a query with :where in combination with the :on_conflict option is not supported by MySQL"
+      "Using a query with :where in combination with the :on_conflict option is not supported by Snowflake"
     )
   end
 
@@ -308,7 +306,8 @@ defmodule Snowflex.EctoAdapter.Connection do
     /: " / ",
     and: " AND ",
     or: " OR ",
-    like: " LIKE "
+    like: " LIKE ",
+    ilike: " ILIKE "
   ]
 
   @binary_ops Keyword.keys(binary_ops)
@@ -328,7 +327,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp distinct(%QueryExpr{expr: false}, _sources, _query), do: []
 
   defp distinct(%QueryExpr{expr: exprs}, _sources, query) when is_list(exprs) do
-    error!(query, "DISTINCT with multiple columns is not supported by MySQL")
+    error!(query, "DISTINCT with multiple columns is not supported by Snowflake")
   end
 
   defp select([], _sources, _query),
@@ -341,7 +340,7 @@ defmodule Snowflex.EctoAdapter.Connection do
           {source, _, nil} ->
             error!(
               query,
-              "MySQL does not support selecting all fields from #{source} without a schema. " <>
+              "Snowflake does not support selecting all fields from #{source} without a schema. " <>
                 "Please specify a schema or specify exactly which fields you want to select"
             )
 
@@ -417,7 +416,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp update_op(command, _quoted_key, _value, _sources, query) do
-    error!(query, "Unknown update operation #{inspect(command)} for MySQL")
+    error!(query, "Unknown update operation #{inspect(command)} for Snowflake")
   end
 
   defp using_join(%{joins: []}, _kind, _sources), do: {[], []}
@@ -428,7 +427,7 @@ defmodule Snowflex.EctoAdapter.Connection do
         %JoinExpr{source: %Ecto.SubQuery{params: [_ | _]}} ->
           error!(
             query,
-            "MySQL adapter does not support subqueries with parameters in update_all/delete_all joins"
+            "Snowflake adapter does not support subqueries with parameters in update_all/delete_all joins"
           )
 
         %JoinExpr{qual: :inner, ix: ix, source: source} ->
@@ -436,7 +435,7 @@ defmodule Snowflex.EctoAdapter.Connection do
           [join, " AS " | name]
 
         %JoinExpr{qual: qual} ->
-          error!(query, "MySQL adapter supports only inner joins on #{kind}, got: '#{qual}'")
+          error!(query, "Snowflake adapter supports only inner joins on #{kind}, got: '#{qual}'")
       end)
 
     wheres =
@@ -496,30 +495,8 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   defp window(%{windows: []}, _sources), do: []
 
-  defp window(%{windows: windows} = query, sources) do
-    [
-      " WINDOW "
-      | intersperse_map(windows, ", ", fn {name, %{expr: kw}} ->
-          [quote_name(name), " AS " | window_exprs(kw, sources, query)]
-        end)
-    ]
-  end
-
-  defp window_exprs(kw, sources, query) do
-    [?(, intersperse_map(kw, ?\s, &window_expr(&1, sources, query)), ?)]
-  end
-
-  defp window_expr({:partition_by, fields}, sources, query) do
-    ["PARTITION BY " | intersperse_map(fields, ", ", &expr(&1, sources, query))]
-  end
-
-  defp window_expr({:order_by, fields}, sources, query) do
-    ["ORDER BY " | intersperse_map(fields, ", ", &order_by_expr(&1, sources, query))]
-  end
-
-  defp window_expr({:frame, {:fragment, _, _} = fragment}, sources, query) do
-    expr(fragment, sources, query)
-  end
+  defp window(_query, _sources),
+    do: raise(RuntimeError, "Snowflex adapter does not support window functions")
 
   defp order_by(%{order_bys: []}, _sources), do: []
 
@@ -538,7 +515,7 @@ defmodule Snowflex.EctoAdapter.Connection do
     case dir do
       :asc -> str
       :desc -> [str | " DESC"]
-      _ -> error!(query, "#{dir} is not supported in ORDER BY in MySQL")
+      _ -> error!(query, "#{dir} is not supported in ORDER BY in Snowflake")
     end
   end
 
@@ -666,7 +643,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp expr({:filter, _, _}, _sources, query) do
-    error!(query, "MySQL adapter does not support aggregate filters")
+    error!(query, "Snowflake adapter does not support aggregate filters")
   end
 
   defp expr(%Ecto.SubQuery{query: query}, sources, parent_query) do
@@ -675,7 +652,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp expr({:fragment, _, [kw]}, _sources, query) when is_list(kw) or tuple_size(kw) == 3 do
-    error!(query, "MySQL adapter does not support keyword or interpolated fragments")
+    error!(query, "Snowflake adapter does not support keyword or interpolated fragments")
   end
 
   defp expr({:fragment, _, parts}, sources, query) do
@@ -708,18 +685,9 @@ defmodule Snowflex.EctoAdapter.Connection do
     ]
   end
 
-  defp expr({:ilike, _, [_, _]}, _sources, query) do
-    error!(query, "ilike is not supported by MySQL")
-  end
-
   defp expr({:over, _, [agg, name]}, sources, query) when is_atom(name) do
     aggregate = expr(agg, sources, query)
     [aggregate, " OVER " | quote_name(name)]
-  end
-
-  defp expr({:over, _, [agg, kw]}, sources, query) do
-    aggregate = expr(agg, sources, query)
-    [aggregate, " OVER " | window_exprs(kw, sources, query)]
   end
 
   defp expr({:{}, _, elems}, sources, query) do
@@ -759,7 +727,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp expr(list, _sources, query) when is_list(list) do
-    error!(query, "Array type is not supported by MySQL")
+    error!(query, "Array type is not supported by Snowflake")
   end
 
   defp expr(%Decimal{} = decimal, _sources, _query) do
@@ -794,7 +762,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp expr(literal, _sources, _query) when is_float(literal) do
-    # MySQL doesn't support float cast
+    # Snowflake doesn't support float cast
     ["(0 + ", Float.to_string(literal), ?)]
   end
 
@@ -856,417 +824,6 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp create_alias(_) do
     ?t
   end
-
-  ## DDL
-
-  alias Ecto.Migration.{Table, Index, Reference, Constraint}
-
-  @impl true
-  def execute_ddl({command, %Table{} = table, columns})
-      when command in [:create, :create_if_not_exists] do
-    table_structure =
-      case column_definitions(table, columns) ++ pk_definitions(columns, ", ") do
-        [] -> []
-        list -> [?\s, ?(, list, ?)]
-      end
-
-    [
-      [
-        "CREATE TABLE ",
-        if_do(command == :create_if_not_exists, "IF NOT EXISTS "),
-        quote_table(table.prefix, table.name),
-        table_structure,
-        comment_expr(table.comment, true),
-        engine_expr(table.engine),
-        options_expr(table.options)
-      ]
-    ]
-  end
-
-  def execute_ddl({command, %Table{} = table, mode}) when command in [:drop, :drop_if_exists] do
-    [
-      [
-        "DROP TABLE ",
-        if_do(command == :drop_if_exists, "IF EXISTS "),
-        quote_table(table.prefix, table.name),
-        drop_mode(mode)
-      ]
-    ]
-  end
-
-  def execute_ddl({:alter, %Table{} = table, changes}) do
-    [
-      [
-        "ALTER TABLE ",
-        quote_table(table.prefix, table.name),
-        ?\s,
-        column_changes(table, changes),
-        pk_definitions(changes, ", ADD ")
-      ]
-    ] ++
-      if_do(
-        table.comment,
-        [["ALTER TABLE ", quote_table(table.prefix, table.name), comment_expr(table.comment)]]
-      )
-  end
-
-  def execute_ddl({:create, %Index{} = index}) do
-    if index.where do
-      error!(nil, "MySQL adapter does not support where in indexes")
-    end
-
-    [
-      [
-        "CREATE",
-        if_do(index.unique, " UNIQUE"),
-        " INDEX ",
-        quote_name(index.name),
-        " ON ",
-        quote_table(index.prefix, index.table),
-        ?\s,
-        ?(,
-        intersperse_map(index.columns, ", ", &index_expr/1),
-        ?),
-        if_do(index.using, [" USING ", to_string(index.using)]),
-        if_do(index.concurrently, " LOCK=NONE")
-      ]
-    ]
-  end
-
-  def execute_ddl({:create_if_not_exists, %Index{}}),
-    do: error!(nil, "MySQL adapter does not support create if not exists for index")
-
-  def execute_ddl({:create, %Constraint{check: check}}) when is_binary(check),
-    do: error!(nil, "MySQL adapter does not support check constraints")
-
-  def execute_ddl({:create, %Constraint{exclude: exclude}}) when is_binary(exclude),
-    do: error!(nil, "MySQL adapter does not support exclusion constraints")
-
-  def execute_ddl({:drop, %Index{}, :cascade}),
-    do: error!(nil, "MySQL adapter does not support cascade in drop index")
-
-  def execute_ddl({:drop, %Index{} = index, :restrict}) do
-    [
-      [
-        "DROP INDEX ",
-        quote_name(index.name),
-        " ON ",
-        quote_table(index.prefix, index.table),
-        if_do(index.concurrently, " LOCK=NONE")
-      ]
-    ]
-  end
-
-  def execute_ddl({:drop, %Constraint{}, _}),
-    do: error!(nil, "MySQL adapter does not support constraints")
-
-  def execute_ddl({:drop_if_exists, %Constraint{}, _}),
-    do: error!(nil, "MySQL adapter does not support constraints")
-
-  def execute_ddl({:drop_if_exists, %Index{}, _}),
-    do: error!(nil, "MySQL adapter does not support drop if exists for index")
-
-  def execute_ddl({:rename, %Table{} = current_table, %Table{} = new_table}) do
-    [
-      [
-        "RENAME TABLE ",
-        quote_table(current_table.prefix, current_table.name),
-        " TO ",
-        quote_table(new_table.prefix, new_table.name)
-      ]
-    ]
-  end
-
-  def execute_ddl({:rename, %Table{} = table, current_column, new_column}) do
-    [
-      [
-        "ALTER TABLE ",
-        quote_table(table.prefix, table.name),
-        " RENAME COLUMN ",
-        quote_name(current_column),
-        " TO ",
-        quote_name(new_column)
-      ]
-    ]
-  end
-
-  def execute_ddl(string) when is_binary(string), do: [string]
-
-  def execute_ddl(keyword) when is_list(keyword),
-    do: error!(nil, "MySQL adapter does not support keyword lists in execute")
-
-  @impl true
-  def ddl_logs(_), do: []
-
-  @impl true
-  def table_exists_query(table) do
-    {"SELECT true FROM information_schema.tables WHERE table_name = ? AND table_schema = DATABASE() LIMIT 1",
-     [table]}
-  end
-
-  defp drop_mode(:cascade), do: " CASCADE"
-  defp drop_mode(:restrict), do: []
-
-  defp pk_definitions(columns, prefix) do
-    pks =
-      for {_, name, _, opts} <- columns,
-          opts[:primary_key],
-          do: name
-
-    case pks do
-      [] -> []
-      _ -> [[prefix, "PRIMARY KEY (", quote_names(pks), ?)]]
-    end
-  end
-
-  defp column_definitions(table, columns) do
-    intersperse_map(columns, ", ", &column_definition(table, &1))
-  end
-
-  defp column_definition(table, {:add, name, %Reference{} = ref, opts}) do
-    [
-      quote_name(name),
-      ?\s,
-      reference_column_type(ref.type, opts),
-      column_options(opts),
-      reference_expr(ref, table, name)
-    ]
-  end
-
-  defp column_definition(_table, {:add, name, type, opts}) do
-    [quote_name(name), ?\s, column_type(type, opts), column_options(opts)]
-  end
-
-  defp column_changes(table, columns) do
-    intersperse_map(columns, ", ", &column_change(table, &1))
-  end
-
-  defp column_change(_table, {_command, _name, %Reference{validate: false}, _opts}) do
-    error!(nil, "validate: false on references is not supported in MyXQL")
-  end
-
-  defp column_change(table, {:add, name, %Reference{} = ref, opts}) do
-    [
-      "ADD ",
-      quote_name(name),
-      ?\s,
-      reference_column_type(ref.type, opts),
-      column_options(opts),
-      constraint_expr(ref, table, name)
-    ]
-  end
-
-  defp column_change(_table, {:add, name, type, opts}) do
-    ["ADD ", quote_name(name), ?\s, column_type(type, opts), column_options(opts)]
-  end
-
-  defp column_change(table, {:add_if_not_exists, name, %Reference{} = ref, opts}) do
-    [
-      "ADD IF NOT EXISTS ",
-      quote_name(name),
-      ?\s,
-      reference_column_type(ref.type, opts),
-      column_options(opts),
-      constraint_if_not_exists_expr(ref, table, name)
-    ]
-  end
-
-  defp column_change(_table, {:add_if_not_exists, name, type, opts}) do
-    ["ADD IF NOT EXISTS ", quote_name(name), ?\s, column_type(type, opts), column_options(opts)]
-  end
-
-  defp column_change(table, {:modify, name, %Reference{} = ref, opts}) do
-    [
-      drop_constraint_expr(opts[:from], table, name),
-      "MODIFY ",
-      quote_name(name),
-      ?\s,
-      reference_column_type(ref.type, opts),
-      column_options(opts),
-      constraint_expr(ref, table, name)
-    ]
-  end
-
-  defp column_change(table, {:modify, name, type, opts}) do
-    [
-      drop_constraint_expr(opts[:from], table, name),
-      "MODIFY ",
-      quote_name(name),
-      ?\s,
-      column_type(type, opts),
-      column_options(opts)
-    ]
-  end
-
-  defp column_change(_table, {:remove, name}), do: ["DROP ", quote_name(name)]
-
-  defp column_change(table, {:remove, name, %Reference{} = ref, _opts}) do
-    [drop_constraint_expr(ref, table, name), "DROP ", quote_name(name)]
-  end
-
-  defp column_change(_table, {:remove, name, _type, _opts}), do: ["DROP ", quote_name(name)]
-
-  defp column_change(table, {:remove_if_exists, name, %Reference{} = ref}) do
-    [drop_constraint_if_exists_expr(ref, table, name), "DROP IF EXISTS ", quote_name(name)]
-  end
-
-  defp column_change(_table, {:remove_if_exists, name, _type}),
-    do: ["DROP IF EXISTS ", quote_name(name)]
-
-  defp column_options(opts) do
-    default = Keyword.fetch(opts, :default)
-    null = Keyword.get(opts, :null)
-    after_column = Keyword.get(opts, :after)
-    comment = Keyword.get(opts, :comment)
-
-    [default_expr(default), null_expr(null), after_expr(after_column), comment_expr(comment)]
-  end
-
-  defp comment_expr(comment, create_table? \\ false)
-
-  defp comment_expr(comment, true) when is_binary(comment),
-    do: " COMMENT = '#{escape_string(comment)}'"
-
-  defp comment_expr(comment, false) when is_binary(comment),
-    do: " COMMENT '#{escape_string(comment)}'"
-
-  defp comment_expr(_, _), do: []
-
-  defp after_expr(nil), do: []
-  defp after_expr(column) when is_atom(column) or is_binary(column), do: " AFTER '#{column}'"
-  defp after_expr(_), do: []
-
-  defp null_expr(false), do: " NOT NULL"
-  defp null_expr(true), do: " NULL"
-  defp null_expr(_), do: []
-
-  defp default_expr({:ok, nil}),
-    do: " DEFAULT NULL"
-
-  defp default_expr({:ok, literal}) when is_binary(literal),
-    do: [" DEFAULT '", escape_string(literal), ?']
-
-  defp default_expr({:ok, literal}) when is_number(literal) or is_boolean(literal),
-    do: [" DEFAULT ", to_string(literal)]
-
-  defp default_expr({:ok, {:fragment, expr}}),
-    do: [" DEFAULT ", expr]
-
-  defp default_expr({:ok, value}) when is_map(value) do
-    library = Application.get_env(:myxql, :json_library, Jason)
-    expr = IO.iodata_to_binary(library.encode_to_iodata!(value))
-    [" DEFAULT ", ?(, ?', escape_string(expr), ?', ?)]
-  end
-
-  defp default_expr(:error),
-    do: []
-
-  defp index_expr(literal) when is_binary(literal),
-    do: literal
-
-  defp index_expr(literal), do: quote_name(literal)
-
-  defp engine_expr(storage_engine),
-    do: [" ENGINE = ", String.upcase(to_string(storage_engine || "INNODB"))]
-
-  defp options_expr(nil),
-    do: []
-
-  defp options_expr(keyword) when is_list(keyword),
-    do: error!(nil, "MySQL adapter does not support keyword lists in :options")
-
-  defp options_expr(options),
-    do: [?\s, to_string(options)]
-
-  defp column_type(type, _opts) when type in ~w(time utc_datetime naive_datetime)a,
-    do: ecto_to_db(type)
-
-  defp column_type(type, opts)
-       when type in ~w(time_usec utc_datetime_usec naive_datetime_usec)a do
-    precision = Keyword.get(opts, :precision, 6)
-    type_name = ecto_to_db(type)
-
-    [type_name, ?(, to_string(precision), ?)]
-  end
-
-  defp column_type(type, opts) do
-    size = Keyword.get(opts, :size)
-    precision = Keyword.get(opts, :precision)
-    scale = Keyword.get(opts, :scale)
-
-    cond do
-      size -> [ecto_size_to_db(type), ?(, to_string(size), ?)]
-      precision -> [ecto_to_db(type), ?(, to_string(precision), ?,, to_string(scale || 0), ?)]
-      type == :string -> ["varchar(255)"]
-      true -> ecto_to_db(type)
-    end
-  end
-
-  defp reference_expr(type, ref, table, name) do
-    {current_columns, reference_columns} = Enum.unzip([{name, ref.column} | ref.with])
-
-    if ref.match do
-      error!(nil, ":match is not supported in references for tds")
-    end
-
-    [
-      "CONSTRAINT ",
-      reference_name(ref, table, name),
-      " ",
-      type,
-      " (",
-      quote_names(current_columns),
-      ?),
-      " REFERENCES ",
-      quote_table(ref.prefix || table.prefix, ref.table),
-      ?(,
-      quote_names(reference_columns),
-      ?),
-      reference_on_delete(ref.on_delete),
-      reference_on_update(ref.on_update)
-    ]
-  end
-
-  defp reference_expr(%Reference{} = ref, table, name),
-    do: [", " | reference_expr("FOREIGN KEY", ref, table, name)]
-
-  defp constraint_expr(%Reference{} = ref, table, name),
-    do: [", ADD " | reference_expr("FOREIGN KEY", ref, table, name)]
-
-  defp constraint_if_not_exists_expr(%Reference{} = ref, table, name),
-    do: [", ADD " | reference_expr("FOREIGN KEY IF NOT EXISTS", ref, table, name)]
-
-  defp drop_constraint_expr(%Reference{} = ref, table, name),
-    do: ["DROP FOREIGN KEY ", reference_name(ref, table, name), ", "]
-
-  defp drop_constraint_expr(_, _, _),
-    do: []
-
-  defp drop_constraint_if_exists_expr(%Reference{} = ref, table, name),
-    do: ["DROP FOREIGN KEY IF EXISTS ", reference_name(ref, table, name), ", "]
-
-  defp drop_constraint_if_exists_expr(_, _, _),
-    do: []
-
-  defp reference_name(%Reference{name: nil}, table, column),
-    do: quote_name("#{table.name}_#{column}_fkey")
-
-  defp reference_name(%Reference{name: name}, _table, _column),
-    do: quote_name(name)
-
-  defp reference_column_type(:serial, _opts), do: "BIGINT UNSIGNED"
-  defp reference_column_type(:bigserial, _opts), do: "BIGINT UNSIGNED"
-  defp reference_column_type(type, opts), do: column_type(type, opts)
-
-  defp reference_on_delete(:nilify_all), do: " ON DELETE SET NULL"
-  defp reference_on_delete(:delete_all), do: " ON DELETE CASCADE"
-  defp reference_on_delete(:restrict), do: " ON DELETE RESTRICT"
-  defp reference_on_delete(_), do: []
-
-  defp reference_on_update(:nilify_all), do: " ON UPDATE SET NULL"
-  defp reference_on_update(:update_all), do: " ON UPDATE CASCADE"
-  defp reference_on_update(:restrict), do: " ON UPDATE RESTRICT"
-  defp reference_on_update(_), do: []
 
   ## Helpers
 
@@ -1348,7 +905,10 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp ecto_size_to_db(type), do: ecto_to_db(type)
 
   defp ecto_to_db(type, query \\ nil)
-  defp ecto_to_db({:array, _}, query), do: error!(query, "Array type is not supported by MySQL")
+
+  defp ecto_to_db({:array, _}, query),
+    do: error!(query, "Array type is not supported by Snowflake")
+
   defp ecto_to_db(:id, _query), do: "integer"
   defp ecto_to_db(:serial, _query), do: "bigint unsigned not null auto_increment"
   defp ecto_to_db(:bigserial, _query), do: "bigint unsigned not null auto_increment"
@@ -1356,7 +916,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp ecto_to_db(:string, _query), do: "varchar"
   defp ecto_to_db(:float, _query), do: "double"
   defp ecto_to_db(:binary, _query), do: "blob"
-  # MySQL does not support uuid
+  # Snowflake does not support uuid
   defp ecto_to_db(:uuid, _query), do: "binary(16)"
   defp ecto_to_db(:map, _query), do: "json"
   defp ecto_to_db({:map, _}, _query), do: "json"
