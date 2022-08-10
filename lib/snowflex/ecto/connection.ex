@@ -104,12 +104,11 @@ defmodule Snowflex.EctoAdapter.Connection do
     group_by = group_by(query, sources)
     having = having(query, sources)
     # qualify = qualify(query, sources)
-    window = window(query, sources)
+    _window = window(query, sources)
     combinations = combinations(query)
     order_by = order_by(query, sources)
     limit = limit(query, sources)
     offset = offset(query, sources)
-    lock = lock(query, sources)
 
     [
       cte,
@@ -120,11 +119,10 @@ defmodule Snowflex.EctoAdapter.Connection do
       group_by,
       having,
       # qualify,
-      window,
       combinations,
       order_by,
       limit,
-      offset | lock
+      offset
       # row_number | lock
     ]
   end
@@ -134,7 +132,7 @@ defmodule Snowflex.EctoAdapter.Connection do
     %{from: %{source: source}, select: select} = query
 
     if select do
-      error!(nil, ":select is not supported in update_all by MySQL")
+      error!(nil, ":select is not supported in update_all by Snowflake")
     end
 
     sources = create_names(query, [])
@@ -497,30 +495,8 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   defp window(%{windows: []}, _sources), do: []
 
-  defp window(%{windows: windows} = query, sources) do
-    [
-      " WINDOW "
-      | intersperse_map(windows, ", ", fn {name, %{expr: kw}} ->
-          [quote_name(name), " AS " | window_exprs(kw, sources, query)]
-        end)
-    ]
-  end
-
-  defp window_exprs(kw, sources, query) do
-    [?(, intersperse_map(kw, ?\s, &window_expr(&1, sources, query)), ?)]
-  end
-
-  defp window_expr({:partition_by, fields}, sources, query) do
-    ["PARTITION BY " | intersperse_map(fields, ", ", &expr(&1, sources, query))]
-  end
-
-  defp window_expr({:order_by, fields}, sources, query) do
-    ["ORDER BY " | intersperse_map(fields, ", ", &order_by_expr(&1, sources, query))]
-  end
-
-  defp window_expr({:frame, {:fragment, _, _} = fragment}, sources, query) do
-    expr(fragment, sources, query)
-  end
+  defp window(_query, _sources),
+    do: raise(RuntimeError, "Snowflex adapter does not support window functions")
 
   defp order_by(%{order_bys: []}, _sources), do: []
 
@@ -712,11 +688,6 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp expr({:over, _, [agg, name]}, sources, query) when is_atom(name) do
     aggregate = expr(agg, sources, query)
     [aggregate, " OVER " | quote_name(name)]
-  end
-
-  defp expr({:over, _, [agg, kw]}, sources, query) do
-    aggregate = expr(agg, sources, query)
-    [aggregate, " OVER " | window_exprs(kw, sources, query)]
   end
 
   defp expr({:{}, _, elems}, sources, query) do
