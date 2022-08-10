@@ -1291,7 +1291,7 @@ defmodule Snowflex.EctoAdapter.Connection do
       error!(nil, "bad literal/field/table name #{inspect(name)} (' is not permitted)")
     end
 
-    [name]
+    [?", name, ?"]
   end
 
   defp quote_names(names), do: intersperse_map(names, ?,, &quote_name/1)
