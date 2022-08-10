@@ -158,7 +158,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   @impl true
   def delete_all(query) do
     if query.select do
-      error!(nil, ":select is not supported in delete_all by MySQL")
+      error!(nil, ":select is not supported in delete_all by Snowflake")
     end
 
     sources = create_names(query, [])
@@ -187,15 +187,15 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, []) do
-    error!(nil, ":returning is not supported in insert/insert_all by MySQL")
+    error!(nil, ":returning is not supported in insert/insert_all by Snowflake")
   end
 
   def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, _placeholders) do
-    error!(nil, ":placeholders is not supported by MySQL")
+    error!(nil, ":placeholders is not supported by Snowflake")
   end
 
   defp on_conflict({_, _, [_ | _]}, _header) do
-    error!(nil, ":conflict_target is not supported in insert/insert_all by MySQL")
+    error!(nil, ":conflict_target is not supported in insert/insert_all by Snowflake")
   end
 
   defp on_conflict({:raise, _, []}, _header) do
@@ -224,7 +224,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp on_conflict({_query, _, []}, _header) do
     error!(
       nil,
-      "Using a query with :where in combination with the :on_conflict option is not supported by MySQL"
+      "Using a query with :where in combination with the :on_conflict option is not supported by Snowflake"
     )
   end
 
@@ -308,7 +308,8 @@ defmodule Snowflex.EctoAdapter.Connection do
     /: " / ",
     and: " AND ",
     or: " OR ",
-    like: " LIKE "
+    like: " LIKE ",
+    ilike: " ILIKE "
   ]
 
   @binary_ops Keyword.keys(binary_ops)
@@ -328,7 +329,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp distinct(%QueryExpr{expr: false}, _sources, _query), do: []
 
   defp distinct(%QueryExpr{expr: exprs}, _sources, query) when is_list(exprs) do
-    error!(query, "DISTINCT with multiple columns is not supported by MySQL")
+    error!(query, "DISTINCT with multiple columns is not supported by Snowflake")
   end
 
   defp select([], _sources, _query),
@@ -341,7 +342,7 @@ defmodule Snowflex.EctoAdapter.Connection do
           {source, _, nil} ->
             error!(
               query,
-              "MySQL does not support selecting all fields from #{source} without a schema. " <>
+              "Snowflake does not support selecting all fields from #{source} without a schema. " <>
                 "Please specify a schema or specify exactly which fields you want to select"
             )
 
@@ -417,7 +418,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp update_op(command, _quoted_key, _value, _sources, query) do
-    error!(query, "Unknown update operation #{inspect(command)} for MySQL")
+    error!(query, "Unknown update operation #{inspect(command)} for Snowflake")
   end
 
   defp using_join(%{joins: []}, _kind, _sources), do: {[], []}
@@ -428,7 +429,7 @@ defmodule Snowflex.EctoAdapter.Connection do
         %JoinExpr{source: %Ecto.SubQuery{params: [_ | _]}} ->
           error!(
             query,
-            "MySQL adapter does not support subqueries with parameters in update_all/delete_all joins"
+            "Snowflake adapter does not support subqueries with parameters in update_all/delete_all joins"
           )
 
         %JoinExpr{qual: :inner, ix: ix, source: source} ->
@@ -436,7 +437,7 @@ defmodule Snowflex.EctoAdapter.Connection do
           [join, " AS " | name]
 
         %JoinExpr{qual: qual} ->
-          error!(query, "MySQL adapter supports only inner joins on #{kind}, got: '#{qual}'")
+          error!(query, "Snowflake adapter supports only inner joins on #{kind}, got: '#{qual}'")
       end)
 
     wheres =
@@ -538,7 +539,7 @@ defmodule Snowflex.EctoAdapter.Connection do
     case dir do
       :asc -> str
       :desc -> [str | " DESC"]
-      _ -> error!(query, "#{dir} is not supported in ORDER BY in MySQL")
+      _ -> error!(query, "#{dir} is not supported in ORDER BY in Snowflake")
     end
   end
 
@@ -666,7 +667,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp expr({:filter, _, _}, _sources, query) do
-    error!(query, "MySQL adapter does not support aggregate filters")
+    error!(query, "Snowflake adapter does not support aggregate filters")
   end
 
   defp expr(%Ecto.SubQuery{query: query}, sources, parent_query) do
@@ -675,7 +676,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp expr({:fragment, _, [kw]}, _sources, query) when is_list(kw) or tuple_size(kw) == 3 do
-    error!(query, "MySQL adapter does not support keyword or interpolated fragments")
+    error!(query, "Snowflake adapter does not support keyword or interpolated fragments")
   end
 
   defp expr({:fragment, _, parts}, sources, query) do
@@ -706,10 +707,6 @@ defmodule Snowflex.EctoAdapter.Connection do
       ", ",
       interval(count, interval, sources, query) | ") AS date)"
     ]
-  end
-
-  defp expr({:ilike, _, [_, _]}, _sources, query) do
-    error!(query, "ilike is not supported by MySQL")
   end
 
   defp expr({:over, _, [agg, name]}, sources, query) when is_atom(name) do
@@ -759,7 +756,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp expr(list, _sources, query) when is_list(list) do
-    error!(query, "Array type is not supported by MySQL")
+    error!(query, "Array type is not supported by Snowflake")
   end
 
   defp expr(%Decimal{} = decimal, _sources, _query) do
@@ -794,7 +791,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   defp expr(literal, _sources, _query) when is_float(literal) do
-    # MySQL doesn't support float cast
+    # Snowflake doesn't support float cast
     ["(0 + ", Float.to_string(literal), ?)]
   end
 
@@ -1348,7 +1345,10 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp ecto_size_to_db(type), do: ecto_to_db(type)
 
   defp ecto_to_db(type, query \\ nil)
-  defp ecto_to_db({:array, _}, query), do: error!(query, "Array type is not supported by MySQL")
+
+  defp ecto_to_db({:array, _}, query),
+    do: error!(query, "Array type is not supported by Snowflake")
+
   defp ecto_to_db(:id, _query), do: "integer"
   defp ecto_to_db(:serial, _query), do: "bigint unsigned not null auto_increment"
   defp ecto_to_db(:bigserial, _query), do: "bigint unsigned not null auto_increment"
@@ -1356,7 +1356,7 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp ecto_to_db(:string, _query), do: "varchar"
   defp ecto_to_db(:float, _query), do: "double"
   defp ecto_to_db(:binary, _query), do: "blob"
-  # MySQL does not support uuid
+  # Snowflake does not support uuid
   defp ecto_to_db(:uuid, _query), do: "binary(16)"
   defp ecto_to_db(:map, _query), do: "json"
   defp ecto_to_db({:map, _}, _query), do: "json"
