@@ -48,8 +48,8 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   @impl true
-  def to_constraints(_exception, _options) do
-    raise "not yet implemented"
+  def to_constraints(exception, _options) do
+    raise exception
   end
 
   @impl true
@@ -59,11 +59,6 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   @impl true
   def explain_query(_connection, _query, _params, _opts) do
-    raise "not yet implemented"
-  end
-
-  @impl true
-  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, _placeholders) do
     raise "not yet implemented"
   end
 
