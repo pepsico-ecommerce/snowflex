@@ -121,8 +121,6 @@ defmodule Snowflex.Client do
         _from,
         %{pid: pid} = state
       ) do
-    params = Protocol.annotate_params(params)
-
     case :odbc.param_query(pid, to_charlist(statement), params) do
       {:error, reason} ->
         error = Error.exception(reason)
@@ -142,7 +140,7 @@ defmodule Snowflex.Client do
       |> Keyword.delete_first(:conn_str)
       |> Keyword.put_new(:auto_commit, :on)
       |> Keyword.put_new(:binary_strings, :on)
-      |> Keyword.put_new(:tuple_row, :on)
+      |> Keyword.put_new(:tuple_row, :off)
       |> Keyword.put_new(:extended_errors, :on)
 
     case :odbc.connect(opts[:conn_str], connect_opts) do
