@@ -133,23 +133,16 @@ defmodule Snowflex.Connection do
     parse_result(columns, rows, query)
   end
 
+  defp parse_result({:updated, count}, _query) do
+    %Result{num_rows: count}
+  end
+
   defp parse_result(result, _query), do: result
 
   defp parse_result(columns, rows, query) do
     %Result{
       columns: Enum.map(columns, &to_string(&1)),
-      # FIXME: I think we can change this in the connection params
-      # https://github.com/pepsico-ecommerce/snowflex/blob/22cf4a3d8161a602fcd0d0acba10d6993c5e3036/lib/snowflex/client.ex#L142
-      rows:
-        Enum.map(rows, fn row ->
-          Tuple.to_list(row)
-          # TODO: evaluate whether or not this should be done in the loaders
-          # https://github.com/pepsico-ecommerce/snowflex/blob/69991f43a918bb996f2181c1d17d1b42119a4c58/lib/snowflex/ecto/ecto_adapter.ex#L13-L15
-          |> Enum.map(fn
-            :null -> nil
-            x -> x
-          end)
-        end),
+      rows: rows,
       num_rows: Enum.count(rows),
       success: true,
       statement: query.statement
