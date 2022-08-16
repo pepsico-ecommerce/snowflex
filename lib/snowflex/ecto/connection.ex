@@ -72,16 +72,6 @@ defmodule Snowflex.EctoAdapter.Connection do
     raise "not yet implemented"
   end
 
-  @impl true
-  def delete(_prefix, _table, _filters, _returning) do
-    raise "not yet implemented"
-  end
-
-  @impl true
-  def delete_all(_query) do
-    raise "not yet implemented"
-  end
-
   ## Query
 
   @parent_as __MODULE__
@@ -156,13 +146,12 @@ defmodule Snowflex.EctoAdapter.Connection do
 
     sources = create_names(query, [])
     cte = cte(query, sources)
-    {_, name, _} = elem(sources, 0)
 
     from = from(query, sources)
     join = join(query, sources)
     where = where(query, sources)
 
-    [cte, "DELETE ", name, ".*", from, join | where]
+    [cte, "DELETE ", from, join | where]
   end
 
   @impl true
