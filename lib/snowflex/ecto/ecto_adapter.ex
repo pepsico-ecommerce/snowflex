@@ -19,22 +19,14 @@ defmodule Snowflex.EctoAdapter do
   def loaders(:float, type), do: [&float_decode/1, type]
   def loaders(:date, type), do: [&date_decode/1, type]
   def loaders(:id, type), do: [&int_decode/1, type]
-  def loaders(:binary_id, type), do: [&uuid_decode/1, type]
   def loaders(:time, type), do: [&time_decode/1, type]
   def loaders(:time_usec, type), do: [&time_decode/1, type]
   def loaders(_, type), do: [type]
 
   def dumpers(:binary, type), do: [type, &binary_encode/1]
-  def dumpers(:binary_id, type), do: [type, &uuid_encode/1]
   def dumpers(_, type), do: [type]
 
   defp binary_encode(raw), do: {:ok, Base.encode16(raw)}
-
-  defp uuid_encode(uuid) do
-    with {:ok, raw} <- Ecto.UUID.dump(uuid) do
-      {:ok, Base.encode16(raw)}
-    end
-  end
 
   def decimal_decode(dec) when is_binary(dec), do: {:ok, Decimal.new(dec)}
   def decimal_decode(dec) when is_float(dec), do: {:ok, Decimal.from_float(dec)}
@@ -61,12 +53,4 @@ defmodule Snowflex.EctoAdapter do
   end
 
   defp date_decode(date), do: Date.from_iso8601(date)
-
-  defp uuid_decode(uuid) do
-    with {:ok, raw} <- Base.decode16(uuid) do
-      Ecto.UUID.load(raw)
-    else
-      err -> err
-    end
-  end
 end
