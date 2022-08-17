@@ -62,16 +62,6 @@ defmodule Snowflex.EctoAdapter.Connection do
     raise "not yet implemented"
   end
 
-  @impl true
-  def update_all(_query) do
-    raise "not yet implemented"
-  end
-
-  @impl true
-  def update(_prefix, _table, _fields, _filters, _returning) do
-    raise "not yet implemented"
-  end
-
   ## Query
 
   @parent_as __MODULE__
