@@ -82,7 +82,7 @@ defmodule Snowflex.Worker do
         {:noreply, state}
 
       {:error, reason} ->
-        Logger.warn("Unable to connect to snowflake: #{reason}")
+        Logger.warn("Unable to connect to snowflake: #{inspect(reason)}")
 
         Process.send_after(
           self(),
@@ -122,7 +122,7 @@ defmodule Snowflex.Worker do
   defp do_sql_query(%{pid: pid} = state, query) do
     case :odbc.sql_query(pid, to_charlist(query)) do
       {:error, reason} ->
-        Logger.warn("Unable to execute query: #{reason}")
+        Logger.warn("Unable to execute query: #{inspect(reason)}")
         {{:error, reason}, state}
 
       result ->
@@ -140,7 +140,7 @@ defmodule Snowflex.Worker do
 
     case :odbc.param_query(pid, ch_query, ch_params) do
       {:error, reason} ->
-        Logger.warn("Unable to execute query: #{reason}")
+        Logger.warn("Unable to execute query: #{inspect(reason)}")
         {{:error, reason}, state}
 
       result ->
