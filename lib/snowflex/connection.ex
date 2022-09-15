@@ -9,7 +9,7 @@ defmodule Snowflex.Connection do
     Client
   }
 
-  defstruct pid: nil, status: :idle, conn_opts: [], worker: Client
+  defstruct pid: nil, status: :idle, conn_opts: [], worker: Client.ODBC
 
   @type state :: %__MODULE__{
           pid: pid(),
@@ -23,20 +23,24 @@ defmodule Snowflex.Connection do
   @impl DBConnection
   def connect(opts) do
     connection_args = Keyword.fetch!(opts, :connection)
+    client_module = Keyword.get(opts, :client, Client.ODBC)
 
-    {:ok, pid} = Client.start_link(opts)
+    {:ok, pid} = client_module.start_link(opts)
 
     state = %__MODULE__{
       pid: pid,
       status: :idle,
-      conn_opts: connection_args
+      conn_opts: connection_args,
+      worker: client_module
     }
 
     {:ok, state}
   end
 
   @impl DBConnection
-  def disconnect(_err, %{pid: pid}), do: Client.disconnect(pid)
+  def disconnect(_err, %{pid: pid}) do
+    Client.ODBC.disconnect(pid)
+  end
 
   @impl DBConnection
   def checkout(state), do: {:ok, state}
@@ -53,11 +57,13 @@ defmodule Snowflex.Connection do
 
   @impl DBConnection
   def handle_prepare(query, _opts, state) do
+    # IO.inspect([query], label: "[Snowflex.Connection] handle_prepare")
     {:ok, query, state}
   end
 
   @impl DBConnection
   def handle_execute(query, params, opts, state) do
+    # IO.inspect([query, params, opts], label: "[Snowflex.Connection] handle_execute")
     do_query(query, params, opts, state)
   end
 
@@ -105,6 +111,8 @@ defmodule Snowflex.Connection do
   ## Helpers
 
   defp do_query(%Query{} = query, [], opts, %{worker: worker} = state) do
+    # IO.inspect([query], label: "[Snowflex.Connection] do_query sql_query")
+
     case worker.sql_query(state.pid, query.statement, opts) do
       {:ok, result} ->
         result = parse_result(result, query)
@@ -116,6 +124,8 @@ defmodule Snowflex.Connection do
   end
 
   defp do_query(%Query{} = query, params, opts, %{worker: worker} = state) do
+    # IO.inspect([query, params], label: "[Snowflex.Connection] do_query param_query")
+
     case worker.param_query(state.pid, query.statement, params, opts) do
       {:ok, result} ->
         result = parse_result(result, query)
