@@ -8,7 +8,7 @@ defmodule SnowflexTest do
   # alias Ecto.Migration.Reference
 
   defp plan(query, operation \\ :all) do
-    {query, _cast_params} =
+    {query, _cast_params, _} =
       Ecto.Adapter.Queryable.plan_query(operation, Snowflex.EctoAdapter, query)
 
     query
