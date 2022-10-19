@@ -23,8 +23,9 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   @impl true
   def query_many(conn, sql, params, opts) do
-    opts = Keyword.put_new(opts, :query_type, :text)
-    Snowflex.query_many(conn, sql, params, opts)
+    # opts = Keyword.put_new(opts, :query_type, :text)
+    # Snowflex.query_many(conn, sql, params, opts)
+    raise "not yet implemented"
   end
 
   @impl true
@@ -39,6 +40,11 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   @impl true
   def ddl_logs(_result) do
+    raise "not yet implemented"
+  end
+
+  @impl true
+  def execute_ddl(_) do
     raise "not yet implemented"
   end
 
