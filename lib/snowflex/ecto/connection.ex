@@ -2,7 +2,6 @@ defmodule Snowflex.EctoAdapter.Connection do
   @behaviour Ecto.Adapters.SQL.Connection
 
   alias Ecto.Query.{BooleanExpr, JoinExpr, QueryExpr}
-  alias Snowflex.Query
   @parent_as __MODULE__
 
   @impl true
@@ -22,10 +21,8 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   @impl true
-  def query_many(conn, sql, params, opts) do
-    # opts = Keyword.put_new(opts, :query_type, :text)
-    # Snowflex.query_many(conn, sql, params, opts)
-    raise "not yet implemented"
+  def query_many(_conn, _sql, _params, _opts) do
+    raise "query_many is not supported by Snowflake"
   end
 
   @impl true
@@ -73,8 +70,16 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   @impl true
-  def explain_query(_connection, _query, _params, _opts) do
-    raise "not yet implemented"
+  # DB explain opts are deprecated, so they aren't used to build the explain query.
+  # See Notes at https://dev.mysql.com/doc/refman/5.7/en/explain.html
+  def explain_query(conn, query, params, opts) do
+    case query(conn, build_explain_query(query), params, opts) do
+      {:ok, %Snowflex.Result{} = result} ->
+        {:ok, Ecto.Adapters.SQL.format_table(result)}
+
+      error ->
+        error
+    end
   end
 
   ## Query
@@ -261,19 +266,6 @@ defmodule Snowflex.EctoAdapter.Connection do
       end)
 
     ["DELETE FROM ", quote_table(prefix, table), " WHERE " | filters]
-  end
-
-  @impl true
-  # DB explain opts are deprecated, so they aren't used to build the explain query.
-  # See Notes at https://dev.mysql.com/doc/refman/5.7/en/explain.html
-  def explain_query(conn, query, params, opts) do
-    case query(conn, build_explain_query(query), params, opts) do
-      {:ok, %Snowflex.Result{} = result} ->
-        {:ok, SQL.format_table(result)}
-
-      error ->
-        error
-    end
   end
 
   def build_explain_query(query) do
@@ -556,10 +548,6 @@ defmodule Snowflex.EctoAdapter.Connection do
       {:intersect_all, query} -> [" INTERSECT ALL (", all(query), ")"]
     end)
   end
-
-  defp lock(%{lock: nil}, _sources), do: []
-  defp lock(%{lock: binary}, _sources) when is_binary(binary), do: [?\s | binary]
-  defp lock(%{lock: expr} = query, sources), do: [?\s | expr(expr, sources, query)]
 
   defp boolean(_name, [], _sources, _query), do: []
 
@@ -889,10 +877,6 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp intersperse_map([elem | rest], separator, mapper, acc),
     do: intersperse_map(rest, separator, mapper, [acc, mapper.(elem), separator])
 
-  defp if_do(condition, value) do
-    if condition, do: value, else: []
-  end
-
   defp escape_string(value) when is_binary(value) do
     value
     |> :binary.replace("'", "''", [:global])
@@ -911,11 +895,6 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp ecto_cast_to_db(:utc_datetime_usec, _query), do: "datetime(6)"
   defp ecto_cast_to_db(:naive_datetime_usec, _query), do: "datetime(6)"
   defp ecto_cast_to_db(type, query), do: ecto_to_db(type, query)
-
-  defp ecto_size_to_db(:binary), do: "varbinary"
-  defp ecto_size_to_db(type), do: ecto_to_db(type)
-
-  defp ecto_to_db(type, query \\ nil)
 
   defp ecto_to_db({:array, _}, query),
     do: error!(query, "Array type is not supported by Snowflake")
