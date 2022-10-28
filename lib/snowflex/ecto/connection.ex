@@ -46,8 +46,8 @@ defmodule Snowflex.EctoAdapter.Connection do
   end
 
   @impl true
-  def table_exists_query(_table) do
-    raise "not yet implemented"
+  def table_exists_query(table) do
+    {"SELECT true FROM information_schema.tables where table_name=? limit 1", [table]}
   end
 
   @impl true
