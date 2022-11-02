@@ -1,6 +1,6 @@
-**THIS IS A WORK IN PROGRESS. USE AT YOUR OWN RISK.**
-
 # Snowflex ❄💪
+
+**THIS IS A WORK IN PROGRESS. USE AT YOUR OWN RISK.**
 
 [![Module Version](https://img.shields.io/hexpm/v/snowflex.svg)](https://hex.pm/packages/snowflex)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/snowflex/)
@@ -17,19 +17,6 @@ The following config options can be set:
 ```elixir
 config :snowflex,
   driver: "/path/to/my/ODBC/driver" # defaults to "/usr/lib/snowflake/odbc/lib/libSnowflake.so"
-```
-
-Connection pools are not automatically started for you. You will need to define and establish each connection pool in your application module. Configuration values related to connection timeouts and the mapping of `:null` query values can be set here.
-
-First, create a module to hold your connection information:
-
-```elixir
-defmodule MyApp.SnowflakeConnection do
-  use Snowflex.Connection,
-    otp_app: :my_app,
-    timeout: :timer.minutes(20),
-    map_nulls_to_nil?: true
-end
 ```
 
 Define your configuration:
@@ -58,10 +45,13 @@ config :my_app, MyApp.SnowflakeConnection,
     ]
 ```
 
+<<<<<<< HEAD
 The odbc driver will, by default, return `:null` for empty values returned from snowflake
 queries. This can be converted to `nil` by passing the `map_nulls_to_nil?: true` option to
 the `use Snowflex.Connection` macro. `:map_nulls_to_nil?` will default to `false` if not set.
 
+=======
+>>>>>>> bd981dc (feat(ecto-adapter): Major refactor)
 Then, in your application module, you would start your connection:
 
 ```elixir
@@ -86,11 +76,11 @@ end
 If you are planning to connect to the Snowflake warehouse, your local Erlang instance
 must have ODBC enabled. The erlang installed by Homebrew does NOT have ODBC support. The `asdf`
 version of erlang does have ODBC support. You will also need the Snowflake ODBC driver installed
-on your machine. You can download this from https://sfc-repo.snowflakecomputing.com/odbc/index.html.
+on your machine. You can download this from <https://sfc-repo.snowflakecomputing.com/odbc/index.html>.
 
 ### Apple Silicon
 
-Snowflake has a native `macaarch64 driver` available from https://sfc-repo.snowflakecomputing.com/odbc/macaarch64/index.html. However Erlang is unable to find the `unixodbc` files by default after Homebrew [changed their installation directory](https://github.com/Homebrew/brew/issues/9177) from `/usr/local` to `/opt/homebrew`.
+Snowflake has a native `macaarch64 driver` available from <https://sfc-repo.snowflakecomputing.com/odbc/macaarch64/index.html>. However Erlang is unable to find the `unixodbc` files by default after Homebrew [changed their installation directory](https://github.com/Homebrew/brew/issues/9177) from `/usr/local` to `/opt/homebrew`.
 
 We can build Erlang with `asdf` and ensure the correct files included to make sure `odbc.app` is available when running Elixir.
 
@@ -108,7 +98,7 @@ rm ~/.asdf/plugins/erlang/kerl-home/otp_installations
 
 We can now get the neccesary ODBC and OpenSSL files from Brew, set their correct locations in the environment, and build Erlang and Elixir with `asdf` like so:
 
-``` sh
+```sh
 brew install unixodbc
 brew install openssl@1.1
 export KERL_CONFIGURE_OPTIONS="--with-odbc=$(brew --prefix unixodbc) --with-ssl=$(brew --prefix openssl@1.1)"
@@ -121,15 +111,23 @@ unset CC
 unset LDFLAGS
 ```
 
+<<<<<<< HEAD
 You will then need to change the following on `/opt/snowflake/snowflakeodbc/lib/simba.snowflake.ini`:
 
 - Change the `CABundleFile` config value to the place the `cacert.pem` file is in your ODBC driver installation (for version 2.25.8 it is in `/opt/snowflake/snowflakeodbc/lib/cacert.pem`). Sometimes it points to an invalid path, which would result in the error "OOB curl_easy_perform() failed: Problem with the SSL CA cert (path? access rights?)" when connecting to snowflake.
 - Comment all lines starting with ODBCInstLib
 - Add the line `ODBCInstLib=/opt/homebrew/Cellar/unixodbc/2.3.11/lib/libodbcinst.dylib` at the bottom
+=======
+You will then need to add the following to `/opt/snowflake/snowflakeodbc/lib/simba.snowflake.ini`
+
+```ini
+ODBCInstLib=/opt/homebrew/Cellar/unixodbc/2.3.11/lib/libodbcinst.dylib
+```
+>>>>>>> bd981dc (feat(ecto-adapter): Major refactor)
 
 And finally ensure that your elixir config has the correct driver location
 
-``` elixir
+```elixir
 config :snowflex, driver: "/opt/snowflake/snowflakeodbc/lib/libSnowflake.dylib"
 ```
 
@@ -140,61 +138,76 @@ The package can be installed by adding `:snowflex` to your list of dependencies 
 ```elixir
 def deps do
   [
-    {:snowflex, "~> 0.5.1"}
+    {:snowflex, "~> 1.0.0"}
   ]
 end
 ```
 
-## DBConnection Support
+## Useage
 
-[DBConnection](https://github.com/elixir-ecto/db_connection) support is currently in experimental phase, setting it up is very similar to current implementation with the expection of configuration options and obtaining the same results will require an extra step:
+An Ecto Adapter is provided to allow for useage similar to any other SQL backed adapter.
 
-### Configuration:
-
-Setting a Module to hold the connection is very similar, but instead you'll use `Snowflex.DBConnection`:
-
-Example:
+Simply declare an Ecto Repo using the Snowlfex adapter, define Ecto Schema modules and use standard Ecto functions.
 
 ```elixir
-defmodule MyApp.SnowflakeConnection do
-  use Snowflex.DBConnection,
+defmodule MyApp.Repo do
+  use Ecto.Repo,
     otp_app: :my_app,
-    timeout: :timer.minutes(5)
+    adapter: Snowflex.EctoAdapter
 end
 ```
 
 ```elixir
-config :my_app, MyApp.SnowflakeConnection,
-  pool_size: 5, # the connection pool size
-  worker: MyApp.CustomWorker, # defaults to Snowflex.DBConnection.Server
-  connection: [
-      role: "PROD",
-      warehouse: System.get_env("SNOWFLAKE_POS_WH"),
-      uid: System.get_env("SNOWFLAKE_POS_UID"),
-      pwd: System.get_env("SNOWFLAKE_POS_PWD")
-    ]
+defmodule MyApp.Schema do
+  use Ecto.Schema
+
+  schema "schema" do
+    field(:x, :integer)
+    field(:y, :integer)
+    field(:z, :integer)
+  end
+end
 ```
-
-### Usage:
-
-After setup, you can use your connection to query:
 
 ```elixir
-alias Snowflex.DBConnection.Result
-
-{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query")
-{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query", ["my params"])
+MyApp.Repo.all(MyApp.Schema)
 ```
 
-As you can see we now receive an `{:ok, result}` tuple, to get results as expected with current implementation, we need to call `process_result/1`:
+## Testing
+
+Testing Ecto Schemas without connecting to a live Snowflake database is made
+possible through swapping out the Ecto Adapter. A test repo which uses SQLite is
+provided.
+
+The largest difficulty with using another adapter is that there will be no
+migrations to get the test repo in a useable state for testing. This is solved
+by the `generate_migrations/2` macro in the `MigrationGenerator` module. The
+test repo must also be created and dropped before each run of the test suite to
+allow the generated migrations to run from a blank state. This can all be
+accomplished in the `test/test_helper.exs` file as follows:
 
 ```elixir
-alias Snowflex.DBConnection.Result
+require Snowflex.MigrationGenerator
 
-{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query")
+opts = [strategy: :one_for_one, name: Snowflex.Supervisor]
+Supervisor.start_link([Snowflex.SQLiteTestRepo], opts)
 
-[%{"col" => 1}, %{"col" => 2}] = SnowflakeDBConnection.process_result(result)
+Snowflex.SQLiteTestRepo.__adapter__().storage_up(Snowflex.SQLiteTestRepo.config())
+
+Snowflex.MigrationGenerator.generate_migrations(Snowflex.SQLiteTestRepo, [
+  TestSchema,
+  TestSchema2,
+  TestSchema3
+])
+
+ExUnit.start()
+
+ExUnit.after_suite(fn _ ->
+  Snowflex.SQLiteTestRepo.__adapter__().storage_down(Snowflex.SQLiteTestRepo.config())
+end)
 ```
+
+Refer to `test/snowflex_sqlite_test.exs` for useage.
 
 ## Copyright and License
 
