@@ -2,7 +2,7 @@ defmodule Snowflex.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/pepsico-ecommerce/snowflex"
-  @version "0.5.2"
+  @version "1.0.0"
 
   def project do
     [
@@ -13,9 +13,14 @@ defmodule Snowflex.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
-      docs: docs()
+      docs: docs(),
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
+
+  # Specifies which paths to compile per environment.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
@@ -43,6 +48,7 @@ defmodule Snowflex.MixProject do
       {:poolboy, "~> 1.5.1"},
       {:backoff, "~> 1.1.6"},
       {:ecto, "~> 3.0"},
+      {:ecto_sql, "~> 3.0"},
       {:db_connection, "~> 2.4"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
