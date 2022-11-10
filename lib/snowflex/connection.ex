@@ -27,6 +27,8 @@ defmodule Snowflex.Connection do
       |> Keyword.fetch!(:connection)
       |> set_defaults()
 
+    database = opts |> Keyword.get(:database)
+
     {:ok, pid} = Client.start_link(opts |> set_defaults())
 
     state = %__MODULE__{
@@ -34,6 +36,10 @@ defmodule Snowflex.Connection do
       status: :idle,
       conn_opts: connection_args
     }
+
+    if database do
+      Client.sql_query(pid, "USE DATABASE #{database}")
+    end
 
     {:ok, state}
   end
