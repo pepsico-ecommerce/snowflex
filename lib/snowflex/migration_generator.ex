@@ -22,7 +22,8 @@ defmodule Snowflex.MigrationGenerator do
                   |> @module.__schema__(field)
                   |> ecto_type_to_db_type()
 
-                add(field, type, primary_key: field in primary_keys)
+                field_source = @module.__schema__(:field_source, field)
+                add(field_source, type, primary_key: field in primary_keys)
               end
             end
           end
