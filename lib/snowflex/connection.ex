@@ -27,7 +27,7 @@ defmodule Snowflex.Connection do
       |> Keyword.fetch!(:connection)
       |> set_defaults()
 
-    {:ok, pid} = Client.start_link(opts |> set_defaults())
+    {:ok, pid} = Client.start_link(connection_args)
 
     state = %__MODULE__{
       pid: pid,
