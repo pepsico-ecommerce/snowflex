@@ -204,8 +204,8 @@ defmodule Snowflex.Connection do
     parse_result(columns, rows, query)
   end
 
-  defp parse_result({:updated, count}, _query) do
-    %Result{num_rows: count}
+  defp parse_result({:updated, count}, query) do
+    %Result{num_rows: count, success: true, statement: query.statement}
   end
 
   defp parse_result(result, _query), do: result
