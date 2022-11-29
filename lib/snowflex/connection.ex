@@ -111,7 +111,7 @@ defmodule Snowflex.Connection do
   end
 
   @impl DBConnection
-  def handle_declare(query, _params, _opts, %{worker: worker} = state) do
+  def handle_declare(query, [], _opts, %{worker: worker} = state) do
     case worker.select_count(state.pid, query) do
       {:ok, _result} ->
         {:ok, query, state.pid, state}
@@ -119,6 +119,12 @@ defmodule Snowflex.Connection do
       {:error, reason} ->
         {:error, reason, state}
     end
+  end
+
+  def handle_declare(_query, _params, _opts, state) do
+    {:error,
+     "Snowflex does not support streaming with queries using parameters. Please use Ecto.Query.API.fragment to pass your arguments directly as literal string values.",
+     state}
   end
 
   @impl DBConnection
