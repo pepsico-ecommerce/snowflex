@@ -20,8 +20,7 @@ defmodule Snowflex.Client do
   """
   @spec start_link(Keyword.t()) :: {:ok, pid()}
   def start_link(opts) do
-    connection_args = Keyword.fetch!(opts, :connection)
-    conn_str = connection_string(connection_args)
+    conn_str = connection_string(opts)
 
     GenServer.start_link(__MODULE__, [{:conn_str, to_charlist(conn_str)} | opts])
   end
@@ -288,10 +287,6 @@ defmodule Snowflex.Client do
     connect_opts =
       opts
       |> Keyword.delete_first(:conn_str)
-      |> Keyword.put_new(:auto_commit, :off)
-      |> Keyword.put_new(:binary_strings, :on)
-      |> Keyword.put_new(:tuple_row, :off)
-      |> Keyword.put_new(:extended_errors, :on)
 
     case :odbc.connect(opts[:conn_str], connect_opts) do
       {:ok, pid} ->
