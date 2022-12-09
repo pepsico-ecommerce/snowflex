@@ -72,7 +72,13 @@ defmodule Snowflex.Type do
   end
 
   def encode(param, _opts) when is_binary(param) do
-    {{:sql_varchar, String.length(param)}, [param]}
+    case :unicode.characters_to_binary(param, :unicode, {:utf16, :little}) do
+      utf16 when is_bitstring(utf16) ->
+        {{:sql_wvarchar, byte_size(param)}, [utf16]}
+
+      _ ->
+        raise "Snowflex failed to convert string to UTF16LE: #{param}"
+    end
   end
 
   def encode(nil, _) do
