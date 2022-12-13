@@ -37,6 +37,10 @@ defmodule Snowflex.Type do
   def encode(true, _), do: {:sql_integer, [1]}
   def encode(false, _), do: {:sql_integer, [0]}
 
+  def encode(nil, _) do
+    {:sql_integer, [:null]}
+  end
+
   def encode(param, _) when is_integer(param), do: {:sql_integer, [param]}
 
   def encode(param, _) when is_float(param), do: {:sql_double, [param]}
@@ -79,10 +83,6 @@ defmodule Snowflex.Type do
       _ ->
         raise "Snowflex failed to convert string to UTF16LE: #{param}"
     end
-  end
-
-  def encode(nil, _) do
-    {:sql_integer, [:null]}
   end
 
   def encode(value, _) do
