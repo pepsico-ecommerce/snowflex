@@ -44,7 +44,17 @@ defmodule Snowflex.Connection do
   end
 
   @impl DBConnection
-  def disconnect(_err, %{pid: pid}), do: Client.disconnect(pid)
+  def disconnect(_err, %{pid: pid, conn_opts: conn_opts}) do
+    auto_commit =
+      case Keyword.fetch(conn_opts, :auto_commit) do
+        {:ok, mode} -> mode
+        :error -> :on
+      end
+
+    if auto_commit == :off, do: Client.commit(pid, :rollback)
+
+    Client.disconnect(pid)
+  end
 
   @impl DBConnection
   def checkout(state), do: {:ok, state}
