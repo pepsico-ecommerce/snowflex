@@ -164,10 +164,9 @@ defmodule Snowflex.Connection do
   ## Helpers
 
   defp do_query(%Query{} = query, params, opts, state) do
-    if Keyword.get(state.conn_opts, :auto_commit, :on) do
-      do_query_without_commit(query, params, opts, state)
-    else
-      do_query_with_commit(query, params, opts, state)
+    case Keyword.get(state.conn_opts, :auto_commit) do
+      :off -> do_query_with_commit(query, params, opts, state)
+      _ -> do_query_without_commit(query, params, opts, state)
     end
   end
 
