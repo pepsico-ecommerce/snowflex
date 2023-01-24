@@ -20,9 +20,26 @@ defmodule Snowflex.EctoAdapter.Connection do
     Snowflex.query(conn, sql, params, opts)
   end
 
+  def query_many!(conn, sql, params, opts) do
+    case query_many(conn, sql, params, opts) do
+      {:ok, result} -> result
+      {:error, error} -> raise error
+    end
+  end
+
   @impl true
-  def query_many(_conn, _sql, _params, _opts) do
-    raise "query_many is not supported by Snowflake"
+  @doc """
+  Run a multi-statement query.
+
+  The `MULTI_STATEMENT_COUNT` Snowflake parameter must be set to 0 to allow
+  multi-statement queries.
+
+  https://docs.snowflake.com/en/sql-reference/parameters.html#multi-statement-count
+  """
+  def query_many(conn, sql, params, opts) do
+    with {:ok, result} <- query(conn, sql, params, opts) do
+      {:ok, List.wrap(result)}
+    end
   end
 
   @impl true
