@@ -223,6 +223,9 @@ defmodule Snowflex.Connection do
     %Result{num_rows: count, success: true, statement: query.statement}
   end
 
+  defp parse_result(results, query) when is_list(results),
+    do: Enum.map(results, fn result -> parse_result(result, query) end)
+
   defp parse_result(result, _query), do: result
 
   defp parse_result(columns, rows, query) do
