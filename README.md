@@ -183,8 +183,15 @@ The largest difficulty with using another adapter is that there will be no
 migrations to get the test repo in a useable state for testing. This is solved
 by the `generate_migrations/2` macro in the `MigrationGenerator` module. The
 test repo must also be created and dropped before each run of the test suite to
-allow the generated migrations to run from a blank state. This can all be
-accomplished in the `test/test_helper.exs` file as follows:
+allow the generated migrations to run from a blank state. 
+
+Install `ecto_sqlite3` in `mix.exs`:
+
+```elixir
+      {:ecto_sqlite3, "~> 0.8", only: [:test]},
+```
+
+And update `test/test_helper.exs` file as follows:
 
 ```elixir
 require Snowflex.MigrationGenerator
