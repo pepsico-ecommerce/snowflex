@@ -54,7 +54,7 @@ defmodule Snowflex.MixProject do
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:meck, "~> 0.9", only: :test},
-      {:ecto_sqlite3, "~> 0.8.2", only: [:dev, :test]}
+      {:ecto_sqlite3, "~> 0.8.2", optional: true, only: [:dev, :test]}
     ]
   end
 
