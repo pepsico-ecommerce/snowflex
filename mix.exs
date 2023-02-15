@@ -45,7 +45,6 @@ defmodule Snowflex.MixProject do
 
   defp deps do
     [
-      {:poolboy, "~> 1.5.1"},
       {:backoff, "~> 1.1.6"},
       {:ecto, "~> 3.9"},
       {:ecto_sql, "~> 3.9"},
@@ -53,7 +52,6 @@ defmodule Snowflex.MixProject do
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
-      {:meck, "~> 0.9", only: :test},
       {:ecto_sqlite3, "~> 0.8.2", optional: true, only: [:dev, :test]}
     ]
   end
