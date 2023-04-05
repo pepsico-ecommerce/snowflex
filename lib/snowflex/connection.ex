@@ -31,8 +31,7 @@ defmodule Snowflex.Connection do
 
     state = %__MODULE__{
       pid: pid,
-      status: :idle,
-      conn_opts: connection_args
+      status: :idle
     }
 
     {:ok, state}
