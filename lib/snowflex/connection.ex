@@ -31,6 +31,7 @@ defmodule Snowflex.Connection do
 
     state = %__MODULE__{
       pid: pid,
+      conn_opts: Keyword.take(connection_args, [:auto_commit, :binary_string, :tuple_row, :extended_errors]),
       status: :idle
     }
 
