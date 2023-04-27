@@ -92,6 +92,7 @@ defmodule Snowflex.Connection do
       otp_app = Keyword.fetch!(opts, :otp_app)
       timeout = Keyword.get(opts, :timeout, :timer.seconds(60))
       map_nulls_to_nil? = Keyword.get(opts, :map_nulls_to_nil?, false)
+      keep_column_case? = Keyword.get(opts, :keep_column_case?, false)
       keep_alive? = Keyword.get(opts, :keep_alive?, false)
 
       @otp_app otp_app
@@ -104,7 +105,8 @@ defmodule Snowflex.Connection do
       @heartbeat_interval :timer.hours(3)
       @query_opts [
         timeout: timeout,
-        map_nulls_to_nil?: map_nulls_to_nil?
+        map_nulls_to_nil?: map_nulls_to_nil?,
+        keep_column_case?: keep_column_case?
       ]
 
       def child_spec(_) do
@@ -138,8 +140,15 @@ defmodule Snowflex.Connection do
       end
 
       @impl Snowflex.Connection
-      def execute(query, params) when is_binary(query) and is_list(params) do
-        Snowflex.param_query(@name, query, params, @query_opts)
+      def execute(query, params, opts \\ [])
+          when is_binary(query) and
+                 is_list(params) do
+        Snowflex.param_query(
+          @name,
+          query,
+          params,
+          Keyword.merge(@query_opts, opts)
+        )
       end
     end
   end

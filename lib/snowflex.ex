@@ -94,7 +94,17 @@ defmodule Snowflex do
 
     bin_headers =
       headers
-      |> Enum.map(fn header -> header |> to_string() |> String.downcase() end)
+      |> Enum.map(fn header ->
+        header
+        |> to_string()
+        |> then(fn name ->
+          opts[:keep_column_case?]
+          |> case do
+            true -> name
+            false -> String.downcase(name)
+          end
+        end)
+      end)
       |> Enum.with_index()
 
     Enum.map(rows, fn row ->
