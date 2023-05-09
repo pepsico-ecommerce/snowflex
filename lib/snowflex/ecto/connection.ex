@@ -536,7 +536,7 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   defp limit(%{limit: nil}, _sources), do: []
 
-  defp limit(%{limit: %QueryExpr{expr: expr}} = query, sources) do
+  defp limit(%{limit: %{expr: expr}} = query, sources) do
     [" LIMIT " | expr(expr, sources, query)]
   end
 
