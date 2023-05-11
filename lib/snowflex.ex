@@ -98,8 +98,7 @@ defmodule Snowflex do
         header
         |> to_string()
         |> then(fn name ->
-          opts[:keep_column_case?]
-          |> case do
+          case opts[:keep_column_case?] do
             true -> name
             false -> String.downcase(name)
           end
