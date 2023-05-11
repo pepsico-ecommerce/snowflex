@@ -1,4 +1,4 @@
-defmodule Snowflex.DBConnection.Result do
+defmodule Snowflex.Result do
   defstruct columns: nil,
             rows: nil,
             num_rows: 0,

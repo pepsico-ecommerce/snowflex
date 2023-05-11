@@ -15,3 +15,15 @@ config :snowflex, Snowflex.DBConnectionTest.SnowflakeDBConnection,
     role: "DEV",
     warehouse: "CUSTOMER_DEV_WH"
   ]
+
+config :logger, level: :warn
+
+config :snowflex, ecto_repos: [Snowflex.SQLiteTestRepo]
+
+config :snowflex, repo: Snowflex.SQLiteTestRepo
+
+config :snowflex, Snowflex.SQLiteTestRepo,
+  database: "test/snowflex_test_repo.sql",
+  journal_mode: :delete,
+  temp_store: :memory,
+  pool: Ecto.Adapters.SQL.Sandbox

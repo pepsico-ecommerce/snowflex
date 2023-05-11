@@ -1,4 +1,4 @@
-defmodule Snowflex.DBConnection.Error do
+defmodule Snowflex.Error do
   @moduledoc """
   Defines an error returned from the ODBC adapter.
   """
