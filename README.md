@@ -121,10 +121,11 @@ unset CC
 unset LDFLAGS
 ```
 
-You will then need to add the following to `/opt/snowflake/snowflakeodbc/lib/simba.snowflake.ini`
-```
-ODBCInstLib=/opt/homebrew/Cellar/unixodbc/2.3.11/lib/libodbcinst.dylib
-```
+You will then need to change the following on `/opt/snowflake/snowflakeodbc/lib/simba.snowflake.ini`:
+
+- Change the `CABundleFile` config value to the place the `cacert.pem` file is in your ODBC driver installation (for version 2.25.8 it is in `/opt/snowflake/snowflakeodbc/lib/cacert.pem`). Sometimes it points to an invalid path, which would result in the error "OOB curl_easy_perform() failed: Problem with the SSL CA cert (path? access rights?)" when connecting to snowflake.
+- Comment all lines starting with ODBCInstLib
+- Add the line `ODBCInstLib=/opt/homebrew/Cellar/unixodbc/2.3.11/lib/libodbcinst.dylib` at the bottom
 
 And finally ensure that your elixir config has the correct driver location
 
