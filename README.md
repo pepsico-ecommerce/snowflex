@@ -58,9 +58,9 @@ config :my_app, MyApp.SnowflakeConnection,
     ]
 ```
 
-The odbc driver will, by default, return `:null` for empty values returned from snowflake queries.
-This will be converted to `nil` by default by Snowflex. A configuration value `map_nulls_to_nil?`
-can be set to `false` if you do not desire this behavior.
+The odbc driver will, by default, return `:null` for empty values returned from snowflake
+queries. This can be converted to `nil` by passing the `map_nulls_to_nil?: true` option to
+the `use Snowflex.Connection` macro. `:map_nulls_to_nil?` will default to `false` if not set.
 
 Then, in your application module, you would start your connection:
 
