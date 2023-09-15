@@ -201,6 +201,16 @@ end)
 
 Refer to `test/snowflex_sqlite_test.exs` for useage.
 
+## Warning
+
+**Ecto dynamic/0 Compile Error**
+
+> tl;dr; OTP 26 has a breaking change against versions of Ecto before 3.9.5. Upgrade to 3.9.5 or higher if using OTP 26.
+
+Please use elixir `Elixir 1.14.5` on `OTP 25` instead. See `.tool-versions`.
+
+https://brianmeeker.me/2023/05/24/otp-26-ecto-dynamic-error/
+
 ## Copyright and License
 
 Copyright (c) 2020 PepsiCo, Inc.

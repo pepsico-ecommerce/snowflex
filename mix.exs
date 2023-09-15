@@ -52,7 +52,13 @@ defmodule Snowflex.MixProject do
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
-      {:ecto_sqlite3, "~> 0.8.2", optional: true, only: [:dev, :test]}
+      {:ecto_sqlite3, "~> 0.8.2", optional: true, only: [:dev, :test]},
+
+      # New libraries
+      {:tesla, "~> 1.7"},
+      {:hackney, "~> 1.17"},
+      {:jason, "~> 1.3"},
+      {:joken, git: "https://github.com/joken-elixir/joken.git", ref: "69370571f10274d2bf26b08229b127101dba640d"},
     ]
   end
 
