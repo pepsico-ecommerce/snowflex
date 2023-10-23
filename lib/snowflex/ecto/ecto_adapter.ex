@@ -21,6 +21,9 @@ defmodule Snowflex.EctoAdapter do
   def loaders(:id, type), do: [&int_decode/1, type]
   def loaders(:time, type), do: [&time_decode/1, type]
   def loaders(:time_usec, type), do: [&time_decode/1, type]
+
+  # NB: Handles instances where date may be wrapped in an additional call, such as `Ecto.Query.API.max/1`
+  def loaders({:maybe, :date}, type), do: [&date_decode/1, type]
   def loaders(_, type), do: [type]
 
   def dumpers(:binary, type), do: [type, &binary_encode/1]
