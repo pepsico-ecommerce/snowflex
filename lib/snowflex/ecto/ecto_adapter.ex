@@ -31,13 +31,18 @@ defmodule Snowflex.EctoAdapter do
 
   defp binary_encode(raw), do: {:ok, Base.encode16(raw)}
 
+  def decimal_decode(nil), do: {:ok, nil}
   def decimal_decode(dec) when is_binary(dec), do: {:ok, Decimal.new(dec)}
   def decimal_decode(dec) when is_float(dec), do: {:ok, Decimal.from_float(dec)}
 
+  defp int_decode(nil), do: {:ok, nil}
   defp int_decode(int) when is_binary(int), do: {:ok, String.to_integer(int)}
   defp int_decode(int), do: {:ok, int}
 
+  defp time_decode(nil), do: {:ok, nil}
   defp time_decode(time), do: Time.from_iso8601(time)
+
+  defp datetime_decode(nil), do: {:ok, nil}
 
   defp datetime_decode({date, time}) do
     with {:ok, date} <- Date.from_erl(date),
@@ -48,6 +53,7 @@ defmodule Snowflex.EctoAdapter do
     end
   end
 
+  defp float_decode(nil), do: {:ok, nil}
   defp float_decode(float) when is_float(float), do: float
 
   defp float_decode(float) do
@@ -55,5 +61,6 @@ defmodule Snowflex.EctoAdapter do
     {:ok, val}
   end
 
+  defp date_decode(nil), do: {:ok, nil}
   defp date_decode(date), do: Date.from_iso8601(date)
 end
