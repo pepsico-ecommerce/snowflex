@@ -182,7 +182,7 @@ defmodule Snowflex.Client do
       case :odbc.sql_query(pid, to_charlist(statement)) do
         {:error, reason} ->
           error = Error.exception(reason)
-          Logger.warn("Unable to execute query: #{error.message}")
+          Logger.warning("Unable to execute query: #{error.message}")
 
           {:reply, {:error, error}, state}
 
@@ -205,7 +205,7 @@ defmodule Snowflex.Client do
     case :odbc.param_query(pid, to_charlist(statement), params) do
       {:error, reason} ->
         error = Error.exception(reason)
-        Logger.warn("Unable to execute query: #{error.message}")
+        Logger.warning("Unable to execute query: #{error.message}")
 
         {:reply, {:error, error}, state}
 
@@ -222,7 +222,7 @@ defmodule Snowflex.Client do
     case :odbc.commit(pid, commit_mode) do
       {:error, reason} ->
         error = Error.exception(reason)
-        Logger.warn("Commit failed: #{error.message}")
+        Logger.warning("Commit failed: #{error.message}")
 
         {:reply, {:error, error}, state}
 
@@ -239,7 +239,7 @@ defmodule Snowflex.Client do
     case :odbc.select_count(pid, to_charlist(statement)) do
       {:error, reason} ->
         error = Error.exception(reason)
-        Logger.warn("Unable to execute select count: #{error.message}")
+        Logger.warning("Unable to execute select count: #{error.message}")
 
         {:reply, {:error, error}, state}
 
@@ -256,7 +256,7 @@ defmodule Snowflex.Client do
     case :odbc.select(pid, position, num_rows) do
       {:error, reason} ->
         error = Error.exception(reason)
-        Logger.warn("Unable to execute next: #{error.message}")
+        Logger.warning("Unable to execute next: #{error.message}")
 
         {:reply, {:error, error}, state}
 
@@ -273,7 +273,7 @@ defmodule Snowflex.Client do
     case :odbc.next(pid) do
       {:error, reason} ->
         error = Error.exception(reason)
-        Logger.warn("Unable to execute next: #{error.message}")
+        Logger.warning("Unable to execute next: #{error.message}")
 
         {:reply, {:error, error}, state}
 
@@ -293,7 +293,7 @@ defmodule Snowflex.Client do
         {:noreply, %{pid: pid, backoff: :backoff.succeed(backoff), state: :connected}}
 
       {:error, reason} ->
-        Logger.warn("Unable to connect to snowflake: #{inspect(reason)}")
+        Logger.warning("Unable to connect to snowflake: #{inspect(reason)}")
 
         seconds =
           backoff
