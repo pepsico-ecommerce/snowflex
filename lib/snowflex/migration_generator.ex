@@ -22,12 +22,15 @@ defmodule Snowflex.MigrationGenerator do
 
               create table(@source, primary_key: false) do
                 for {name, type} <- @fields do
-                  field_type = Ecto.Type.type(type)
+                  field_type = ecto_type_to_db_type(type)
                   field_source = name
                   add(field_source, type, primary_key: name in primary_keys)
                 end
               end
             end
+
+            defp ecto_type_to_db_type({:parameterized, Ecto.Enum, _}), do: :string
+            defp ecto_type_to_db_type(any), do: any
           end
 
           Ecto.Migrator.up(
@@ -52,13 +55,16 @@ defmodule Snowflex.MigrationGenerator do
                   type =
                     :type
                     |> @module.__schema__(field)
-                    |> Ecto.Type.type()
+                    |> ecto_type_to_db_type()
 
                   field_source = @module.__schema__(:field_source, field)
                   add(field_source, type, primary_key: field in primary_keys)
                 end
               end
             end
+
+            defp ecto_type_to_db_type({:parameterized, Ecto.Enum, _}), do: :string
+            defp ecto_type_to_db_type(any), do: any
           end
 
           Ecto.Migrator.up(
