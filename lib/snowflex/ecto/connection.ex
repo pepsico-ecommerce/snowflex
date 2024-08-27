@@ -1,7 +1,7 @@
 defmodule Snowflex.EctoAdapter.Connection do
   @behaviour Ecto.Adapters.SQL.Connection
 
-  alias Ecto.Query.{BooleanExpr, JoinExpr, QueryExpr}
+  alias Ecto.Query.{BooleanExpr, ByExpr, JoinExpr, QueryExpr, WithExpr}
   @parent_as __MODULE__
 
   @impl true
@@ -107,10 +107,11 @@ defmodule Snowflex.EctoAdapter.Connection do
   @impl true
   def all(query, as_prefix \\ []) do
     sources = create_names(query, as_prefix)
+    {select_distinct, order_by_distinct} = distinct(query.distinct, sources, query)
 
     cte = cte(query, sources)
     from = from(query, sources)
-    select = select(query, sources)
+    select = select(query, select_distinct, sources)
     join = join(query, sources)
     where = where(query, sources)
     group_by = group_by(query, sources)
@@ -118,7 +119,7 @@ defmodule Snowflex.EctoAdapter.Connection do
     # qualify = qualify(query, sources)
     window = window(query, sources)
     combinations = combinations(query)
-    order_by = order_by(query, sources)
+    order_by = order_by(query, order_by_distinct, sources)
     limit = limit(query, sources)
     offset = offset(query, sources)
 
@@ -317,15 +318,49 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   defp handle_call(fun, _arity), do: {:fun, Atom.to_string(fun)}
 
-  defp select(%{select: %{fields: fields}, distinct: distinct} = query, sources) do
-    ["SELECT ", distinct(distinct, sources, query) | select(fields, sources, query)]
+  defp select(%{select: %{fields: fields}} = query, select_distinct, sources) do
+    ["SELECT", select_distinct, ?\s | select_fields(fields, sources, query)]
   end
 
-  defp distinct(nil, _sources, _query), do: []
-  defp distinct(%QueryExpr{expr: true}, _sources, _query), do: "DISTINCT "
-  defp distinct(%QueryExpr{expr: false}, _sources, _query), do: []
+  defp select_fields([], _sources, _query),
+    do: "TRUE"
 
-  defp distinct(%QueryExpr{expr: exprs}, _sources, query) when is_list(exprs) do
+  defp select_fields(fields, sources, query) do
+    Enum.map_intersperse(fields, ", ", fn
+      {:&, _, [idx]} ->
+        case elem(sources, idx) do
+          {nil, source, nil} ->
+            error!(
+              query,
+              "Snowflex adapter does not support selecting all fields from fragment #{source}. " <>
+                "Please specify exactly which fields you want to select"
+            )
+
+          {source, _, nil} ->
+            error!(
+              query,
+              "Snowflex adapter does not support selecting all fields from #{source} without a schema. " <>
+                "Please specify a schema or specify exactly which fields you want to select"
+            )
+
+          {_, source, _} ->
+            source
+        end
+
+      {key, value} ->
+        [expr(value, sources, query), " AS " | quote_name(key)]
+
+      value ->
+        expr(value, sources, query)
+    end)
+  end
+
+  defp distinct(nil, _sources, _query), do: {[], []}
+  defp distinct(%ByExpr{expr: []}, _, _), do: {[], []}
+  defp distinct(%ByExpr{expr: true}, _, _), do: {" DISTINCT", []}
+  defp distinct(%ByExpr{expr: false}, _, _), do: {[], []}
+
+  defp distinct(%ByExpr{expr: exprs}, _sources, query) do
     error!(query, "DISTINCT with multiple columns is not supported by Snowflake")
   end
 
@@ -486,8 +521,12 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp group_by(%{group_bys: group_bys} = query, sources) do
     [
       " GROUP BY "
-      | intersperse_map(group_bys, ", ", fn %QueryExpr{expr: expr} ->
-          intersperse_map(expr, ", ", &expr(&1, sources, query))
+      | intersperse_map(group_bys, ", ", fn
+          %QueryExpr{expr: expr} ->
+            intersperse_map(expr, ", ", &expr(&1, sources, query))
+
+          %ByExpr{expr: expr} ->
+            Enum.map_intersperse(expr, ", ", &expr(&1, sources, query))
         end)
     ]
   end
@@ -524,12 +563,27 @@ defmodule Snowflex.EctoAdapter.Connection do
     ]
   end
 
+  defp order_by(%{order_bys: []}, _distinct, _sources), do: []
+
+  defp order_by(%{order_bys: order_bys} = query, distinct, sources) do
+    order_bys = Enum.flat_map(order_bys, & &1.expr)
+    order_bys = order_by_concat(distinct, order_bys)
+    [" ORDER BY " | Enum.map_intersperse(order_bys, ", ", &order_by_expr(&1, sources, query))]
+  end
+
+  defp order_by_concat([head | left], [head | right]), do: [head | order_by_concat(left, right)]
+  defp order_by_concat(left, right), do: left ++ right
+
   defp order_by_expr({dir, expr}, sources, query) do
     str = expr(expr, sources, query)
 
     case dir do
       :asc -> str
+      :asc_nulls_last -> [str | " ASC NULLS LAST"]
+      :asc_nulls_first -> [str | " ASC NULLS FIRST"]
       :desc -> [str | " DESC"]
+      :desc_nulls_last -> [str | " DESC NULLS LAST"]
+      :desc_nulls_first -> [str | " DESC NULLS FIRST"]
       _ -> error!(query, "#{dir} is not supported in ORDER BY in Snowflake")
     end
   end

@@ -46,8 +46,8 @@ defmodule Snowflex.MixProject do
   defp deps do
     [
       {:backoff, "~> 1.1.6"},
-      {:ecto, "~> 3.9"},
-      {:ecto_sql, "~> 3.9"},
+      {:ecto, "~> 3.12"},
+      {:ecto_sql, "~> 3.12"},
       {:db_connection, "~> 2.4"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
