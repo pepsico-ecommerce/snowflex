@@ -322,6 +322,32 @@ defmodule Snowflex.EctoAdapter.Connection do
     ["SELECT", select_distinct, ?\s | select_fields(fields, sources, query)]
   end
 
+  defp select([], _sources, _query),
+    do: "TRUE"
+
+  defp select(fields, sources, query) do
+    intersperse_map(fields, ", ", fn
+      {:&, _, [idx]} ->
+        case elem(sources, idx) do
+          {source, _, nil} ->
+            error!(
+              query,
+              "Snowflake does not support selecting all fields from #{source} without a schema. " <>
+                "Please specify a schema or specify exactly which fields you want to select"
+            )
+
+          {_, source, _} ->
+            source
+        end
+
+      {key, value} ->
+        [expr(value, sources, query), " AS ", quote_name(key)]
+
+      value ->
+        expr(value, sources, query)
+    end)
+  end
+
   defp select_fields([], _sources, _query),
     do: "TRUE"
 
@@ -360,34 +386,8 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp distinct(%ByExpr{expr: true}, _, _), do: {" DISTINCT", []}
   defp distinct(%ByExpr{expr: false}, _, _), do: {[], []}
 
-  defp distinct(%ByExpr{expr: exprs}, _sources, query) do
+  defp distinct(%ByExpr{expr: _exprs}, _sources, query) do
     error!(query, "DISTINCT with multiple columns is not supported by Snowflake")
-  end
-
-  defp select([], _sources, _query),
-    do: "TRUE"
-
-  defp select(fields, sources, query) do
-    intersperse_map(fields, ", ", fn
-      {:&, _, [idx]} ->
-        case elem(sources, idx) do
-          {source, _, nil} ->
-            error!(
-              query,
-              "Snowflake does not support selecting all fields from #{source} without a schema. " <>
-                "Please specify a schema or specify exactly which fields you want to select"
-            )
-
-          {_, source, _} ->
-            source
-        end
-
-      {key, value} ->
-        [expr(value, sources, query), " AS ", quote_name(key)]
-
-      value ->
-        expr(value, sources, query)
-    end)
   end
 
   defp from(%{from: %{source: source, hints: hints}} = query, sources) do
@@ -550,17 +550,6 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   defp window_expr({:frame, {:fragment, _, _} = fragment}, sources, query) do
     expr(fragment, sources, query)
-  end
-
-  defp order_by(%{order_bys: []}, _sources), do: []
-
-  defp order_by(%{order_bys: order_bys} = query, sources) do
-    [
-      " ORDER BY "
-      | intersperse_map(order_bys, ", ", fn %QueryExpr{expr: expr} ->
-          intersperse_map(expr, ", ", &order_by_expr(&1, sources, query))
-        end)
-    ]
   end
 
   defp order_by(%{order_bys: []}, _distinct, _sources), do: []
@@ -764,7 +753,7 @@ defmodule Snowflex.EctoAdapter.Connection do
     [?(, intersperse_map(elems, ?,, &expr(&1, sources, query)), ?)]
   end
 
-  defp expr({:count, _, []}, _sources, _query), do: "count(*)"
+  defp expr({:count, _, []}, _sources, _query), do: "count(*)::number"
 
   defp expr({:json_extract_path, _, [expr, path]}, sources, query) do
     path =
@@ -960,27 +949,29 @@ defmodule Snowflex.EctoAdapter.Connection do
     |> :binary.replace("\"", "\\\\\"", [:global])
   end
 
-  defp ecto_cast_to_db(:id, _query), do: "unsigned"
-  defp ecto_cast_to_db(:integer, _query), do: "unsigned"
-  defp ecto_cast_to_db(:string, _query), do: "char"
+  defp ecto_cast_to_db(:id, _query), do: "number"
+  defp ecto_cast_to_db(:integer, _query), do: "number"
+  defp ecto_cast_to_db(:string, _query), do: "varchar"
   defp ecto_cast_to_db(:utc_datetime_usec, _query), do: "datetime(6)"
   defp ecto_cast_to_db(:naive_datetime_usec, _query), do: "datetime(6)"
   defp ecto_cast_to_db(type, query), do: ecto_to_db(type, query)
 
-  defp ecto_to_db({:array, _}, query),
-    do: error!(query, "Array type is not supported by Snowflake")
+  defp ecto_to_db({:array, _}, _query), do: "array"
 
-  defp ecto_to_db(:id, _query), do: "integer"
-  defp ecto_to_db(:serial, _query), do: "bigint unsigned not null auto_increment"
-  defp ecto_to_db(:bigserial, _query), do: "bigint unsigned not null auto_increment"
+  defp ecto_to_db(:id, _query), do: "number"
+  defp ecto_to_db(:serial, query), do: error!(query, "SERIAL is not supported by Snowflake")
+
+  defp ecto_to_db(:bigserial, query),
+    do: error!(query, "BIGSERIAL is not supported by snowflake")
+
   defp ecto_to_db(:binary_id, _query), do: "varchar"
   defp ecto_to_db(:string, _query), do: "varchar"
-  defp ecto_to_db(:float, _query), do: "double"
+  defp ecto_to_db(:float, _query), do: "number"
   defp ecto_to_db(:binary, _query), do: "varchar"
   # Snowflake does not support uuid
   defp ecto_to_db(:uuid, _query), do: "varchar"
-  defp ecto_to_db(:map, _query), do: "json"
-  defp ecto_to_db({:map, _}, _query), do: "json"
+  defp ecto_to_db(:map, _query), do: "variant"
+  defp ecto_to_db({:map, _}, _query), do: "variant"
   defp ecto_to_db(:time_usec, _query), do: "time"
   defp ecto_to_db(:utc_datetime, _query), do: "datetime"
   defp ecto_to_db(:utc_datetime_usec, _query), do: "datetime"
