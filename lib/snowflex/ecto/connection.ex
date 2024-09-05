@@ -949,27 +949,29 @@ defmodule Snowflex.EctoAdapter.Connection do
     |> :binary.replace("\"", "\\\\\"", [:global])
   end
 
-  defp ecto_cast_to_db(:id, _query), do: "unsigned"
-  defp ecto_cast_to_db(:integer, _query), do: "unsigned"
-  defp ecto_cast_to_db(:string, _query), do: "char"
+  defp ecto_cast_to_db(:id, _query), do: "number"
+  defp ecto_cast_to_db(:integer, _query), do: "number"
+  defp ecto_cast_to_db(:string, _query), do: "varchar"
   defp ecto_cast_to_db(:utc_datetime_usec, _query), do: "datetime(6)"
   defp ecto_cast_to_db(:naive_datetime_usec, _query), do: "datetime(6)"
   defp ecto_cast_to_db(type, query), do: ecto_to_db(type, query)
 
-  defp ecto_to_db({:array, _}, query),
-    do: error!(query, "Array type is not supported by Snowflake")
+  defp ecto_to_db({:array, _}, _query), do: "array"
 
-  defp ecto_to_db(:id, _query), do: "integer"
-  defp ecto_to_db(:serial, _query), do: "bigint unsigned not null auto_increment"
-  defp ecto_to_db(:bigserial, _query), do: "bigint unsigned not null auto_increment"
+  defp ecto_to_db(:id, _query), do: "number"
+  defp ecto_to_db(:serial, query), do: error!(query, "SERIAL is not supported by Snowflake")
+
+  defp ecto_to_db(:bigserial, query),
+    do: error!(query, "BIGSERIAL is not supported by snowflake")
+
   defp ecto_to_db(:binary_id, _query), do: "varchar"
   defp ecto_to_db(:string, _query), do: "varchar"
-  defp ecto_to_db(:float, _query), do: "double"
+  defp ecto_to_db(:float, _query), do: "number"
   defp ecto_to_db(:binary, _query), do: "varchar"
   # Snowflake does not support uuid
   defp ecto_to_db(:uuid, _query), do: "varchar"
-  defp ecto_to_db(:map, _query), do: "json"
-  defp ecto_to_db({:map, _}, _query), do: "json"
+  defp ecto_to_db(:map, _query), do: "variant"
+  defp ecto_to_db({:map, _}, _query), do: "variant"
   defp ecto_to_db(:time_usec, _query), do: "time"
   defp ecto_to_db(:utc_datetime, _query), do: "datetime"
   defp ecto_to_db(:utc_datetime_usec, _query), do: "datetime"
