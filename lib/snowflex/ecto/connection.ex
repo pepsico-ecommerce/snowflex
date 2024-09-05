@@ -322,6 +322,32 @@ defmodule Snowflex.EctoAdapter.Connection do
     ["SELECT", select_distinct, ?\s | select_fields(fields, sources, query)]
   end
 
+  defp select([], _sources, _query),
+    do: "TRUE"
+
+  defp select(fields, sources, query) do
+    intersperse_map(fields, ", ", fn
+      {:&, _, [idx]} ->
+        case elem(sources, idx) do
+          {source, _, nil} ->
+            error!(
+              query,
+              "Snowflake does not support selecting all fields from #{source} without a schema. " <>
+                "Please specify a schema or specify exactly which fields you want to select"
+            )
+
+          {_, source, _} ->
+            source
+        end
+
+      {key, value} ->
+        [expr(value, sources, query), " AS ", quote_name(key)]
+
+      value ->
+        expr(value, sources, query)
+    end)
+  end
+
   defp select_fields([], _sources, _query),
     do: "TRUE"
 
@@ -360,34 +386,8 @@ defmodule Snowflex.EctoAdapter.Connection do
   defp distinct(%ByExpr{expr: true}, _, _), do: {" DISTINCT", []}
   defp distinct(%ByExpr{expr: false}, _, _), do: {[], []}
 
-  defp distinct(%ByExpr{expr: exprs}, _sources, query) do
+  defp distinct(%ByExpr{expr: _exprs}, _sources, query) do
     error!(query, "DISTINCT with multiple columns is not supported by Snowflake")
-  end
-
-  defp select([], _sources, _query),
-    do: "TRUE"
-
-  defp select(fields, sources, query) do
-    intersperse_map(fields, ", ", fn
-      {:&, _, [idx]} ->
-        case elem(sources, idx) do
-          {source, _, nil} ->
-            error!(
-              query,
-              "Snowflake does not support selecting all fields from #{source} without a schema. " <>
-                "Please specify a schema or specify exactly which fields you want to select"
-            )
-
-          {_, source, _} ->
-            source
-        end
-
-      {key, value} ->
-        [expr(value, sources, query), " AS ", quote_name(key)]
-
-      value ->
-        expr(value, sources, query)
-    end)
   end
 
   defp from(%{from: %{source: source, hints: hints}} = query, sources) do
@@ -550,17 +550,6 @@ defmodule Snowflex.EctoAdapter.Connection do
 
   defp window_expr({:frame, {:fragment, _, _} = fragment}, sources, query) do
     expr(fragment, sources, query)
-  end
-
-  defp order_by(%{order_bys: []}, _sources), do: []
-
-  defp order_by(%{order_bys: order_bys} = query, sources) do
-    [
-      " ORDER BY "
-      | intersperse_map(order_bys, ", ", fn %QueryExpr{expr: expr} ->
-          intersperse_map(expr, ", ", &order_by_expr(&1, sources, query))
-        end)
-    ]
   end
 
   defp order_by(%{order_bys: []}, _distinct, _sources), do: []
