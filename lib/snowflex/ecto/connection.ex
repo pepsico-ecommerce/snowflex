@@ -753,7 +753,7 @@ defmodule Snowflex.EctoAdapter.Connection do
     [?(, intersperse_map(elems, ?,, &expr(&1, sources, query)), ?)]
   end
 
-  defp expr({:count, _, []}, _sources, _query), do: "count(*)"
+  defp expr({:count, _, []}, _sources, _query), do: "count(*)::number"
 
   defp expr({:json_extract_path, _, [expr, path]}, sources, query) do
     path =
