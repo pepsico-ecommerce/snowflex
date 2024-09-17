@@ -9,12 +9,13 @@ defmodule Snowflex.Connection do
     Client
   }
 
-  defstruct pid: nil, status: :idle, conn_opts: [], worker: Client
+  defstruct pid: nil, status: :idle, conn_opts: [], commit_opts: [], worker: Client
 
   @type state :: %__MODULE__{
           pid: pid(),
           status: :idle,
           conn_opts: Keyword.t(),
+          commit_opts: Keyword.t(),
           worker: Client | any()
         }
 
@@ -44,14 +45,14 @@ defmodule Snowflex.Connection do
   end
 
   @impl DBConnection
-  def disconnect(_err, %{pid: pid, conn_opts: conn_opts}) do
+  def disconnect(_err, %{pid: pid, conn_opts: conn_opts, commit_opts: commit_opts}) do
     auto_commit =
       case Keyword.fetch(conn_opts, :auto_commit) do
         {:ok, mode} -> mode
         :error -> :on
       end
 
-    if auto_commit == :off, do: Client.commit(pid, :rollback)
+    if auto_commit == :off, do: Client.commit(pid, :rollback, commit_opts)
 
     Client.disconnect(pid)
   end
@@ -90,14 +91,14 @@ defmodule Snowflex.Connection do
 
   @impl DBConnection
   def handle_begin(
-        _opts,
+        opts,
         %Snowflex.Connection{
-          conn_opts: opts
+          conn_opts: conn_opts
         } = state
       ) do
-    case Keyword.get(opts, :auto_commit) do
+    case Keyword.get(conn_opts, :auto_commit) do
       :off ->
-        {:ok, %Result{}, state}
+        {:ok, %Result{}, Map.put(state, :commit_opts, opts)}
 
       _ ->
         {:error, "auto_commit must be off for the connection to use transactions"}
