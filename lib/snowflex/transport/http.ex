@@ -1,4 +1,4 @@
-if Code.ensure_loaded?(Tesla) do
+if Code.ensure_loaded?(Req) do
   defmodule Snowflex.Transport.HTTP do
     @moduledoc false
 
@@ -43,11 +43,6 @@ if Code.ensure_loaded?(Tesla) do
       {"X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT"}
     ]
 
-    @middleware [
-      {Tesla.Middleware.Headers, @headers},
-      Tesla.Middleware.JSON
-    ]
-
     @behaviour Snowflex.Transport
 
     @impl true
@@ -59,12 +54,11 @@ if Code.ensure_loaded?(Tesla) do
       key = Keyword.fetch!(connection, :key)
 
       client =
-        [
-          {Tesla.Middleware.BaseUrl, base_url(account)},
-          {Tesla.Middleware.BearerAuth, token: key}
-        ]
-        |> Enum.concat(@middleware)
-        |> Tesla.client()
+        Req.new(
+          base_url: base_url(account),
+          auth: {:bearer, key},
+          headers: @headers
+        )
 
       conn = %Conn{client: client, query_opts: query_opts}
       {:ok, pid} = Agent.start_link(fn -> conn end)
@@ -80,7 +74,7 @@ if Code.ensure_loaded?(Tesla) do
       %{client: client, query_opts: opts} = Agent.get(conn, & &1)
 
       client
-      |> Tesla.post("statements", build_query(query, opts))
+      |> Req.post!(url: "statements", json: build_query(query, opts))
       |> handle_response(query)
     end
 
@@ -89,7 +83,7 @@ if Code.ensure_loaded?(Tesla) do
       %{client: client, query_opts: opts} = Agent.get(conn, & &1)
 
       client
-      |> Tesla.post("statements", build_query(query, params, opts))
+      |> Req.post!(url: "statements", json: build_query(query, params, opts))
       |> handle_response(query)
     end
 
@@ -103,19 +97,38 @@ if Code.ensure_loaded?(Tesla) do
     @spec string_param(String.t(), non_neg_integer()) :: param()
     def string_param(val, _length \\ 250), do: {"TEXT", val}
 
-    # ---
-
     defp base_url(account_id) do
       "https://#{account_id}.snowflakecomputing.com/api"
     end
 
-    defp handle_response({:error, reason}, _), do: {:error, reason}
+    defp handle_response(%{status: status, body: body} = resp, query) when status in 200..299 do
+      case body do
+        %{"data" => %{"rowset" => rows, "rowtype" => columns}} ->
+          headers = Enum.map(columns, & &1["name"])
+          row_tuples = Enum.map(rows, &List.to_tuple/1)
 
-    defp handle_response(resp, query) do
-      IO.inspect(%{resp: resp, query: query})
+          {:ok, Result.from_headers_and_rows(query, headers, row_tuples)}
 
-      # FIXME: handle other responses
-      raise "not implemented"
+        %{"data" => %{"rowset" => []}} ->
+          {:ok, Result.from_headers_and_rows(query, [], [])}
+
+        %{"data" => %{"statementHandle" => _handle, "complete" => true}} ->
+          # For DDL/DML statements that don't return rows
+          {:ok, Result.from_update(query, 0)}
+
+        _ ->
+          {:error, "Unexpected response format: #{inspect(resp)}"}
+      end
+    end
+
+    defp handle_response(%{status: status, body: body}, _query) do
+      error_msg =
+        case body do
+          %{"message" => msg} -> msg
+          _ -> "HTTP #{status}: #{inspect(body)}"
+        end
+
+      {:error, error_msg}
     end
 
     defp build_query(query, params \\ [], opts) do
@@ -135,7 +148,7 @@ if Code.ensure_loaded?(Tesla) do
       }
     end
 
-    defp put_unless_nil(map, _, nil), do: map
+    defp put_unless_nil(map, _key, nil), do: map
     defp put_unless_nil(map, key, value), do: Map.put(map, key, value)
   end
 end
