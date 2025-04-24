@@ -2,28 +2,52 @@ defmodule Snowflex.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/pepsico-ecommerce/snowflex"
-  @version "0.5.2"
+  @version "1.0.0"
 
   def project do
     [
       app: :snowflex,
       name: "Snowflex",
       version: @version,
-      elixir: "~> 1.9",
+      elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
-      docs: docs()
+      dialyzer: [
+        plt_add_apps: [:ex_unit, :mix, :credo, :earmark],
+        list_unused_filters: true,
+        flags: [
+          :no_opaque,
+          :unknown,
+          :unmatched_returns,
+          :extra_return,
+          :missing_return,
+          :error_handling
+        ],
+        plt_file: {:no_warn, "priv/plts/project.plt"},
+        plt_core_path: "priv/plts/core.plt"
+      ],
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test
+      ],
+      docs: docs(),
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
+
+  # Specifies which paths to compile per environment.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :odbc],
-      env: [
-        driver: "/usr/lib/snowflake/odbc/lib/libSnowflake.so"
-      ]
+      extra_applications: [:logger],
+      mod: {Snowflex.Application, []}
     ]
   end
 
@@ -40,14 +64,26 @@ defmodule Snowflex.MixProject do
 
   defp deps do
     [
-      {:poolboy, "~> 1.5.1"},
       {:backoff, "~> 1.1.6"},
-      {:ecto, "~> 3.0"},
+      # Ecto/DBConnection
+      {:ecto, "~> 3.12"},
+      {:ecto_sql, "~> 3.12"},
       {:db_connection, "~> 2.4"},
-      {:telemetry, "~> 0.4 or ~> 1.0"},
-      {:dialyxir, "~> 1.0", only: :dev, runtime: false},
+      # HTTP
+      {:req, "~> 0.5"},
+      {:jose, "~> 1.11"},
+      {:jason, "~> 1.0"},
+      # Linting
+      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: :dev, runtime: false},
+      {:ex_check, "~> 0.12", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.13", only: :test},
+      {:doctor, "~> 0.22.0", only: :dev},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+      # Documentation
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
-      {:meck, "~> 0.9", only: :test}
+      # Runtime introspection
+      {:telemetry, "~> 0.4 or ~> 1.0"}
     ]
   end
 
@@ -55,10 +91,9 @@ defmodule Snowflex.MixProject do
     [
       extras: [
         "CHANGELOG.md": [],
-        LICENSE: [title: "License"],
-        "README.md": [title: "Overview"]
+        LICENSE: [title: "License"]
       ],
-      main: "readme",
+      main: "Snowflex",
       api_reference: false,
       source_url: @source_url,
       source_ref: "v#{@version}",

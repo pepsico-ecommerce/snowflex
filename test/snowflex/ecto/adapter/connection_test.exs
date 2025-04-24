@@ -1,0 +1,1334 @@
+defmodule Snowflex.Ecto.Adapter.ConnectionTest do
+  use ExUnit.Case
+
+  import Ecto.Query
+
+  alias Ecto.Queryable
+  alias Snowflex.Ecto.Adapter.Connection, as: SQL
+  # alias Ecto.Migration.Reference
+
+  defp plan(query, operation \\ :all) do
+    {query, _cast_params, _} =
+      Ecto.Adapter.Queryable.plan_query(operation, Snowflex, query)
+
+    query
+  end
+
+  defp all(query), do: query |> SQL.all() |> IO.iodata_to_binary()
+  defp update_all(query), do: query |> SQL.update_all() |> IO.iodata_to_binary()
+  defp delete_all(query), do: query |> SQL.delete_all() |> IO.iodata_to_binary()
+
+  defp insert(prefx, table, header, rows, on_conflict, returning) do
+    IO.iodata_to_binary(SQL.insert(prefx, table, header, rows, on_conflict, returning, []))
+  end
+
+  defp update(prefx, table, fields, filter, returning) do
+    IO.iodata_to_binary(SQL.update(prefx, table, fields, filter, returning))
+  end
+
+  defp delete(prefx, table, filter, returning) do
+    IO.iodata_to_binary(SQL.delete(prefx, table, filter, returning))
+  end
+
+  @tag timeout: :infinity
+  test "from" do
+    require IEx
+
+    query = TestSchema |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0}
+  end
+
+  test "from with hints" do
+    query =
+      TestSchema |> from(hints: ["USE INDEX FOO", "USE INDEX BAR"]) |> select([r], r.x) |> plan()
+
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 USE INDEX FOO USE INDEX BAR}
+  end
+
+  test "from without schema" do
+    query = "posts" |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT p0.x FROM posts AS p0}
+
+    query = "posts" |> select([r], fragment("?", r)) |> plan()
+    assert all(query) == ~s{SELECT p0 FROM posts AS p0}
+
+    query = "Posts" |> select([:x]) |> plan()
+    assert all(query) == ~s{SELECT P0.x FROM Posts AS P0}
+
+    query = "0posts" |> select([:x]) |> plan()
+    assert all(query) == ~s{SELECT t0.x FROM 0posts AS t0}
+
+    assert_raise Ecto.QueryError,
+                 ~r"Snowflake does not support selecting all fields from posts without a schema",
+                 fn ->
+                   all(from(p in "posts", select: p) |> plan())
+                 end
+  end
+
+  test "from with subquery" do
+    query = subquery("posts" |> select([r], %{x: r.x, y: r.y})) |> select([r], r.x) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM (SELECT sp0.x AS x, sp0.y AS y FROM posts AS sp0) AS s0}
+
+    query = subquery("posts" |> select([r], %{x: r.x, z: r.y})) |> select([r], r) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x, s0.z FROM (SELECT sp0.x AS x, sp0.y AS z FROM posts AS sp0) AS s0}
+
+    query =
+      subquery(subquery("posts" |> select([r], %{x: r.x, z: r.y})) |> select([r], r))
+      |> select([r], r)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x, s0.z FROM (SELECT ss0.x AS x, ss0.z AS z FROM (SELECT ssp0.x AS x, ssp0.y AS z FROM posts AS ssp0) AS ss0) AS s0}
+  end
+
+  test "CTE" do
+    initial_query =
+      "categories"
+      |> where([c], is_nil(c.parent_id))
+      |> select([c], %{id: c.id, depth: fragment("1")})
+
+    iteration_query =
+      "categories"
+      |> join(:inner, [c], t in "tree", on: t.id == c.parent_id)
+      |> select([c, t], %{id: c.id, depth: fragment("? + 1", t.depth)})
+
+    cte_query = initial_query |> union_all(^iteration_query)
+
+    query =
+      TestSchema
+      |> recursive_ctes(true)
+      |> with_cte("tree", as: ^cte_query)
+      |> join(:inner, [r], t in "tree", on: t.id == r.category_id)
+      |> select([r, t], %{x: r.x, category_id: t.id, depth: type(t.depth, :integer)})
+      |> plan()
+
+    assert all(query) ==
+             ~s{WITH RECURSIVE tree AS } <>
+               ~s{(SELECT sc0.id AS id, 1 AS depth FROM categories AS sc0 WHERE (sc0.parent_id IS NULL) } <>
+               ~s{UNION ALL } <>
+               ~s{(SELECT c0.id, t1.depth + 1 FROM categories AS c0 } <>
+               ~s{INNER JOIN tree AS t1 ON t1.id = c0.parent_id)) } <>
+               ~s{SELECT s0.x, t1.id, CAST(t1.depth AS number) } <>
+               ~s{FROM schema AS s0 } <>
+               ~s{INNER JOIN tree AS t1 ON t1.id = s0.category_id}
+  end
+
+  @raw_sql_cte """
+  SELECT * FROM categories WHERE c.parent_id IS NULL
+  UNION ALL
+  SELECT * FROM categories AS c, category_tree AS ct WHERE ct.id = c.parent_id
+  """
+
+  test "reference CTE in union" do
+    comments_scope_query =
+      "comments"
+      |> where([c], is_nil(c.deleted_at))
+      |> select([c], %{entity_id: c.entity_id, text: c.text})
+
+    posts_query =
+      "posts"
+      |> join(:inner, [p], c in "comments_scope", on: c.entity_id == p.guid)
+      |> select([p, c], [p.title, c.text])
+
+    videos_query =
+      "videos"
+      |> join(:inner, [v], c in "comments_scope", on: c.entity_id == v.guid)
+      |> select([v, c], [v.title, c.text])
+
+    query =
+      posts_query
+      |> union_all(^videos_query)
+      |> with_cte("comments_scope", as: ^comments_scope_query)
+      |> plan()
+
+    assert all(query) ==
+             ~s{WITH comments_scope AS (} <>
+               ~s{SELECT sc0.entity_id AS entity_id, sc0.text AS text } <>
+               ~s{FROM comments AS sc0 WHERE (sc0.deleted_at IS NULL)) } <>
+               ~s{SELECT p0.title, c1.text } <>
+               ~s{FROM posts AS p0 } <>
+               ~s{INNER JOIN comments_scope AS c1 ON c1.entity_id = p0.guid } <>
+               ~s{UNION ALL } <>
+               ~s{(SELECT v0.title, c1.text } <>
+               ~s{FROM videos AS v0 } <>
+               ~s{INNER JOIN comments_scope AS c1 ON c1.entity_id = v0.guid)}
+  end
+
+  test "materialized CTE option" do
+    comments_scope_query =
+      "comments"
+      |> where([c], is_nil(c.deleted_at))
+      |> select([c], %{entity_id: c.entity_id, text: c.text})
+
+    query =
+      "posts"
+      |> join(:inner, [p], c in "comments_scope", on: c.entity_id == p.guid)
+      |> select([p, c], [p.title, c.text])
+      |> with_cte("comments_scope", as: ^comments_scope_query, materialized: true)
+      |> plan()
+
+    assert all(query) ==
+             ~s{WITH comments_scope AS MATERIALIZED (} <>
+               ~s{SELECT sc0.entity_id AS entity_id, sc0.text AS text } <>
+               ~s{FROM comments AS sc0 WHERE (sc0.deleted_at IS NULL)) } <>
+               ~s{SELECT p0.title, c1.text } <>
+               ~s{FROM posts AS p0 } <>
+               ~s{INNER JOIN comments_scope AS c1 ON c1.entity_id = p0.guid}
+  end
+
+  test "fragment CTE" do
+    query =
+      TestSchema
+      |> recursive_ctes(true)
+      |> with_cte("tree", as: fragment(@raw_sql_cte))
+      |> join(:inner, [p], c in "tree", on: c.id == p.category_id)
+      |> select([r], r.x)
+      |> plan()
+
+    assert all(query) ==
+             ~s{WITH RECURSIVE tree AS (#{@raw_sql_cte}) } <>
+               ~s{SELECT s0.x } <>
+               ~s{FROM schema AS s0 } <>
+               ~s{INNER JOIN tree AS t1 ON t1.id = s0.category_id}
+  end
+
+  test "CTE update_all" do
+    cte_query =
+      from(x in TestSchema,
+        order_by: [asc: :id],
+        limit: 10,
+        lock: "FOR UPDATE SKIP LOCKED",
+        select: %{id: x.id}
+      )
+
+    query =
+      TestSchema
+      |> with_cte("target_rows", as: ^cte_query)
+      |> join(:inner, [row], target in "target_rows", on: target.id == row.id)
+      |> update(set: [x: 123])
+      |> plan(:update_all)
+
+    assert update_all(query) ==
+             ~s{WITH target_rows AS } <>
+               ~s{(SELECT ss0.id AS id FROM schema AS ss0 ORDER BY ss0.id LIMIT 10) } <>
+               ~s{UPDATE schema AS s0, target_rows AS t1 } <>
+               ~s{SET s0.x = 123 } <>
+               ~s{WHERE (t1.id = s0.id)}
+  end
+
+  test "CTE delete_all" do
+    cte_query =
+      from(x in TestSchema,
+        order_by: [asc: :id],
+        limit: 10,
+        lock: "FOR UPDATE SKIP LOCKED",
+        select: %{id: x.id}
+      )
+
+    query =
+      TestSchema
+      |> with_cte("target_rows", as: ^cte_query)
+      |> join(:inner, [row], target in "target_rows", on: target.id == row.id)
+      |> plan(:delete_all)
+
+    assert delete_all(query) ==
+             ~s{WITH target_rows AS } <>
+               ~s{(SELECT ss0.id AS id FROM schema AS ss0 ORDER BY ss0.id LIMIT 10) } <>
+               ~s{DELETE  } <>
+               ~s{FROM schema AS s0 } <>
+               ~s{INNER JOIN target_rows AS t1 ON t1.id = s0.id}
+  end
+
+  test "parent binding subquery and CTE" do
+    initial_query =
+      "categories"
+      |> where([c], c.id == parent_as(:parent_category).id)
+      |> select([:id, :parent_id])
+
+    iteration_query =
+      "categories"
+      |> join(:inner, [c], t in "tree", on: t.parent_id == c.id)
+      |> select([:id, :parent_id])
+
+    cte_query = initial_query |> union_all(^iteration_query)
+
+    breadcrumbs_query =
+      "tree"
+      |> recursive_ctes(true)
+      |> with_cte("tree", as: ^cte_query)
+      |> select([t], %{breadcrumbs: fragment("GROUP_CONCAT(? SEPARATOR ' / ')", t.id)})
+
+    query =
+      from(c in "categories",
+        as: :parent_category,
+        left_lateral_join: b in subquery(breadcrumbs_query),
+        on: true,
+        select: %{id: c.id, breadcrumbs: b.breadcrumbs}
+      )
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT c0.id, s1.breadcrumbs FROM categories AS c0 } <>
+               ~s{LEFT OUTER JOIN LATERAL } <>
+               ~s{(WITH RECURSIVE tree AS } <>
+               ~s{(SELECT ssc0.id AS id, ssc0.parent_id AS parent_id FROM categories AS ssc0 WHERE (ssc0.id = c0.id) } <>
+               ~s{UNION ALL } <>
+               ~s{(SELECT c0.id, c0.parent_id FROM categories AS c0 } <>
+               ~s{INNER JOIN tree AS t1 ON t1.parent_id = c0.id)) } <>
+               ~s{SELECT GROUP_CONCAT(st0.id SEPARATOR ' / ') AS breadcrumbs FROM tree AS st0) AS s1 ON TRUE}
+  end
+
+  test "select" do
+    query = TestSchema |> select([r], {r.x, r.y}) |> plan()
+    assert all(query) == ~s{SELECT s0.x, s0.y FROM schema AS s0}
+
+    query = TestSchema |> select([r], [r.x, r.y]) |> plan()
+    assert all(query) == ~s{SELECT s0.x, s0.y FROM schema AS s0}
+
+    query = TestSchema |> select([r], struct(r, [:x, :y])) |> plan()
+    assert all(query) == ~s{SELECT s0.x, s0.y FROM schema AS s0}
+  end
+
+  test "aggregates" do
+    query = TestSchema |> select(count()) |> plan()
+    assert all(query) == ~s{SELECT count(*)::number FROM schema AS s0}
+  end
+
+  test "aggregate filters" do
+    query = TestSchema |> select([r], count(r.x) |> filter(r.x > 10)) |> plan()
+
+    assert_raise Ecto.QueryError,
+                 ~r/Snowflake adapter does not support aggregate filters in query/,
+                 fn ->
+                   all(query)
+                 end
+  end
+
+  test "distinct" do
+    query = TestSchema |> distinct([r], true) |> select([r], {r.x, r.y}) |> plan()
+    assert all(query) == ~s{SELECT DISTINCT s0.x, s0.y FROM schema AS s0}
+
+    query = TestSchema |> distinct([r], false) |> select([r], {r.x, r.y}) |> plan()
+    assert all(query) == ~s{SELECT s0.x, s0.y FROM schema AS s0}
+
+    query = TestSchema |> distinct(true) |> select([r], {r.x, r.y}) |> plan()
+    assert all(query) == ~s{SELECT DISTINCT s0.x, s0.y FROM schema AS s0}
+
+    query = TestSchema |> distinct(false) |> select([r], {r.x, r.y}) |> plan()
+    assert all(query) == ~s{SELECT s0.x, s0.y FROM schema AS s0}
+
+    assert_raise Ecto.QueryError,
+                 ~r"DISTINCT with multiple columns is not supported by Snowflake",
+                 fn ->
+                   query =
+                     TestSchema |> distinct([r], [r.x, r.y]) |> select([r], {r.x, r.y}) |> plan()
+
+                   all(query)
+                 end
+  end
+
+  test "coalesce" do
+    query = TestSchema |> select([s], coalesce(s.x, 5)) |> plan()
+    assert all(query) == ~s{SELECT coalesce(s0.x, 5) FROM schema AS s0}
+  end
+
+  test "where" do
+    query =
+      TestSchema |> where([r], r.x == 42) |> where([r], r.y != 43) |> select([r], r.x) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 WHERE (s0.x = 42) AND (s0.y != 43)}
+
+    query = TestSchema |> where([r], {r.x, r.y} > {1, 2}) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 WHERE ((s0.x,s0.y) > (1,2))}
+  end
+
+  test "or_where" do
+    query =
+      TestSchema
+      |> or_where([r], r.x == 42)
+      |> or_where([r], r.y != 43)
+      |> select([r], r.x)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 WHERE (s0.x = 42) OR (s0.y != 43)}
+
+    query =
+      TestSchema
+      |> or_where([r], r.x == 42)
+      |> or_where([r], r.y != 43)
+      |> where([r], r.z == 44)
+      |> select([r], r.x)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 WHERE ((s0.x = 42) OR (s0.y != 43)) AND (s0.z = 44)}
+  end
+
+  test "order by" do
+    query = TestSchema |> order_by([r], r.x) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 ORDER BY s0.x}
+
+    query = TestSchema |> order_by([r], [r.x, r.y]) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 ORDER BY s0.x, s0.y}
+
+    query = TestSchema |> order_by([r], asc: r.x, desc: r.y) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 ORDER BY s0.x, s0.y DESC}
+
+    query = TestSchema |> order_by([r], []) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0}
+
+    # Test NULLS FIRST and NULLS LAST options which are supported by Snowflake
+    query = TestSchema |> order_by([r], asc_nulls_first: r.x) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 ORDER BY s0.x ASC NULLS FIRST}
+
+    query = TestSchema |> order_by([r], asc_nulls_last: r.x) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 ORDER BY s0.x ASC NULLS LAST}
+
+    query = TestSchema |> order_by([r], desc_nulls_first: r.x) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 ORDER BY s0.x DESC NULLS FIRST}
+
+    query = TestSchema |> order_by([r], desc_nulls_last: r.x) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 ORDER BY s0.x DESC NULLS LAST}
+  end
+
+  test "union and union all" do
+    base_query =
+      TestSchema |> select([r], r.x) |> order_by(fragment("rand")) |> offset(10) |> limit(5)
+
+    union_query1 = TestSchema |> select([r], r.y) |> order_by([r], r.y) |> offset(20) |> limit(40)
+    union_query2 = TestSchema |> select([r], r.z) |> order_by([r], r.z) |> offset(30) |> limit(60)
+
+    query = base_query |> union(^union_query1) |> union(^union_query2) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 } <>
+               ~s{UNION (SELECT s0.y FROM schema AS s0 ORDER BY s0.y LIMIT 40 OFFSET 20) } <>
+               ~s{UNION (SELECT s0.z FROM schema AS s0 ORDER BY s0.z LIMIT 60 OFFSET 30) } <>
+               ~s{ORDER BY rand LIMIT 5 OFFSET 10}
+
+    query = base_query |> union_all(^union_query1) |> union_all(^union_query2) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 } <>
+               ~s{UNION ALL (SELECT s0.y FROM schema AS s0 ORDER BY s0.y LIMIT 40 OFFSET 20) } <>
+               ~s{UNION ALL (SELECT s0.z FROM schema AS s0 ORDER BY s0.z LIMIT 60 OFFSET 30) } <>
+               ~s{ORDER BY rand LIMIT 5 OFFSET 10}
+  end
+
+  test "except and except all" do
+    base_query =
+      TestSchema |> select([r], r.x) |> order_by(fragment("rand")) |> offset(10) |> limit(5)
+
+    except_query1 =
+      TestSchema |> select([r], r.y) |> order_by([r], r.y) |> offset(20) |> limit(40)
+
+    except_query2 =
+      TestSchema |> select([r], r.z) |> order_by([r], r.z) |> offset(30) |> limit(60)
+
+    query = base_query |> except(^except_query1) |> except(^except_query2) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 } <>
+               ~s{EXCEPT (SELECT s0.y FROM schema AS s0 ORDER BY s0.y LIMIT 40 OFFSET 20) } <>
+               ~s{EXCEPT (SELECT s0.z FROM schema AS s0 ORDER BY s0.z LIMIT 60 OFFSET 30) } <>
+               ~s{ORDER BY rand LIMIT 5 OFFSET 10}
+
+    query = base_query |> except_all(^except_query1) |> except_all(^except_query2) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 } <>
+               ~s{EXCEPT ALL (SELECT s0.y FROM schema AS s0 ORDER BY s0.y LIMIT 40 OFFSET 20) } <>
+               ~s{EXCEPT ALL (SELECT s0.z FROM schema AS s0 ORDER BY s0.z LIMIT 60 OFFSET 30) } <>
+               ~s{ORDER BY rand LIMIT 5 OFFSET 10}
+  end
+
+  test "intersect and intersect all" do
+    base_query =
+      TestSchema |> select([r], r.x) |> order_by(fragment("rand")) |> offset(10) |> limit(5)
+
+    intersect_query1 =
+      TestSchema |> select([r], r.y) |> order_by([r], r.y) |> offset(20) |> limit(40)
+
+    intersect_query2 =
+      TestSchema |> select([r], r.z) |> order_by([r], r.z) |> offset(30) |> limit(60)
+
+    query = base_query |> intersect(^intersect_query1) |> intersect(^intersect_query2) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 } <>
+               ~s{INTERSECT (SELECT s0.y FROM schema AS s0 ORDER BY s0.y LIMIT 40 OFFSET 20) } <>
+               ~s{INTERSECT (SELECT s0.z FROM schema AS s0 ORDER BY s0.z LIMIT 60 OFFSET 30) } <>
+               ~s{ORDER BY rand LIMIT 5 OFFSET 10}
+
+    query =
+      base_query |> intersect_all(^intersect_query1) |> intersect_all(^intersect_query2) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.x FROM schema AS s0 } <>
+               ~s{INTERSECT ALL (SELECT s0.y FROM schema AS s0 ORDER BY s0.y LIMIT 40 OFFSET 20) } <>
+               ~s{INTERSECT ALL (SELECT s0.z FROM schema AS s0 ORDER BY s0.z LIMIT 60 OFFSET 30) } <>
+               ~s{ORDER BY rand LIMIT 5 OFFSET 10}
+  end
+
+  test "limit and offset" do
+    query = TestSchema |> limit([r], 3) |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 LIMIT 3}
+
+    query = TestSchema |> offset([r], 5) |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 OFFSET 5}
+
+    query = TestSchema |> offset([r], 5) |> limit([r], 3) |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 LIMIT 3 OFFSET 5}
+  end
+
+  test "string escape" do
+    query = "schema" |> where(foo: "'\\  ") |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 WHERE (s0.foo = '''\\\\  ')}
+
+    query = "schema" |> where(foo: "'") |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 WHERE (s0.foo = '''')}
+  end
+
+  test "binary ops" do
+    query = TestSchema |> select([r], r.x == 2) |> plan()
+    assert all(query) == ~s{SELECT s0.x = 2 FROM schema AS s0}
+
+    query = TestSchema |> select([r], r.x != 2) |> plan()
+    assert all(query) == ~s{SELECT s0.x != 2 FROM schema AS s0}
+
+    query = TestSchema |> select([r], r.x <= 2) |> plan()
+    assert all(query) == ~s{SELECT s0.x <= 2 FROM schema AS s0}
+
+    query = TestSchema |> select([r], r.x >= 2) |> plan()
+    assert all(query) == ~s{SELECT s0.x >= 2 FROM schema AS s0}
+
+    query = TestSchema |> select([r], r.x < 2) |> plan()
+    assert all(query) == ~s{SELECT s0.x < 2 FROM schema AS s0}
+
+    query = TestSchema |> select([r], r.x > 2) |> plan()
+    assert all(query) == ~s{SELECT s0.x > 2 FROM schema AS s0}
+
+    query = TestSchema |> select([r], r.x + 2) |> plan()
+    assert all(query) == ~s{SELECT s0.x + 2 FROM schema AS s0}
+  end
+
+  test "is_nil" do
+    query = TestSchema |> select([r], is_nil(r.x)) |> plan()
+    assert all(query) == ~s{SELECT s0.x IS NULL FROM schema AS s0}
+
+    query = TestSchema |> select([r], not is_nil(r.x)) |> plan()
+    assert all(query) == ~s{SELECT NOT (s0.x IS NULL) FROM schema AS s0}
+
+    query = "schema" |> select([r], r.x == is_nil(r.y)) |> plan()
+    assert all(query) == ~s{SELECT s0.x = (s0.y IS NULL) FROM schema AS s0}
+  end
+
+  test "order_by and types" do
+    query =
+      "schema3"
+      |> order_by([e], type(fragment("?", e.binary), ^:decimal))
+      |> select(true)
+      |> plan()
+
+    assert all(query) == "SELECT TRUE FROM schema3 AS s0 ORDER BY s0.binary + 0"
+  end
+
+  test "fragments" do
+    query = TestSchema |> select([r], fragment("now")) |> plan()
+    assert all(query) == ~s{SELECT now FROM schema AS s0}
+
+    query = TestSchema |> select([r], fragment("fun(?)", r)) |> plan()
+    assert all(query) == ~s{SELECT fun(s0) FROM schema AS s0}
+
+    query = TestSchema |> select([r], fragment("lcase(?)", r.x)) |> plan()
+    assert all(query) == ~s{SELECT lcase(s0.x) FROM schema AS s0}
+
+    query =
+      TestSchema |> select([r], r.x) |> where([], fragment("? = \"query\\?\"", ^10)) |> plan()
+
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 WHERE (? = \"query?\")}
+
+    query =
+      TestSchema |> select([r], fragment("? COLLATE ?", r.x, identifier(^"es_ES"))) |> plan()
+
+    assert all(query) == ~s{SELECT s0.x COLLATE identifier('es_ES') FROM schema AS s0}
+
+    value = 13
+    query = TestSchema |> select([r], fragment("lcase(?, ?)", r.x, ^value)) |> plan()
+    assert all(query) == ~s{SELECT lcase(s0.x, ?) FROM schema AS s0}
+
+    query = TestSchema |> select([], fragment(title: 2)) |> plan()
+
+    assert_raise Ecto.QueryError, fn ->
+      all(query)
+    end
+  end
+
+  test "literals" do
+    query = "schema" |> where(foo: true) |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 WHERE (s0.foo = TRUE)}
+
+    query = "schema" |> where(foo: false) |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 WHERE (s0.foo = FALSE)}
+
+    query = "schema" |> where(foo: "abc") |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 WHERE (s0.foo = 'abc')}
+
+    query = "schema" |> where(foo: 123) |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 WHERE (s0.foo = 123)}
+
+    query = "schema" |> where(foo: 123.0) |> select([], true) |> plan()
+    assert all(query) == ~s{SELECT TRUE FROM schema AS s0 WHERE (s0.foo = (0 + 123.0))}
+  end
+
+  test "tagged type" do
+    query =
+      TestSchema |> select([], type(^"601d74e4-a8d3-4b6e-8365-eddb4c893327", Ecto.UUID)) |> plan()
+
+    assert all(query) == ~s{SELECT CAST(? AS varchar) FROM schema AS s0}
+  end
+
+  test "string type" do
+    query = TestSchema |> select([], type(^"test", :string)) |> plan()
+    assert all(query) == ~s{SELECT CAST(? AS varchar) FROM schema AS s0}
+  end
+
+  test "json_extract_path" do
+    query = TestSchema |> select([s], json_extract_path(s.meta, [0, 1])) |> plan()
+    assert all(query) == ~s{SELECT s0.meta:[0].[1] FROM schema AS s0}
+
+    query = TestSchema |> select([s], json_extract_path(s.meta, ["a", "b"])) |> plan()
+    assert all(query) == ~s{SELECT s0.meta:"a"."b" FROM schema AS s0}
+
+    query = TestSchema |> select([s], json_extract_path(s.meta, ["'a"])) |> plan()
+    assert all(query) == ~s{SELECT s0.meta:"''a" FROM schema AS s0}
+
+    query = TestSchema |> select([s], json_extract_path(s.meta, ["\"a"])) |> plan()
+    assert all(query) == ~s{SELECT s0.meta:"\\\\"a" FROM schema AS s0}
+  end
+
+  test "nested expressions" do
+    z = 123
+    query = from(r in TestSchema, []) |> select([r], (r.x > 0 and r.y > ^(-z)) or true) |> plan()
+    assert all(query) == ~s{SELECT ((s0.x > 0) AND (s0.y > ?)) OR TRUE FROM schema AS s0}
+  end
+
+  test "in expression" do
+    query = TestSchema |> select([e], 1 in [1, e.x, 3]) |> plan()
+    assert all(query) == ~s{SELECT 1 IN (1,s0.x,3) FROM schema AS s0}
+
+    query = TestSchema |> select([e], 1 in ^[]) |> plan()
+    assert all(query) == ~s{SELECT false FROM schema AS s0}
+
+    query = TestSchema |> select([e], 1 in ^[1, 2, 3]) |> plan()
+    assert all(query) == ~s{SELECT 1 IN (?,?,?) FROM schema AS s0}
+
+    query = TestSchema |> select([e], 1 in [1, ^2, 3]) |> plan()
+    assert all(query) == ~s{SELECT 1 IN (1,?,3) FROM schema AS s0}
+
+    query = TestSchema |> select([e], 1 in fragment("foo")) |> plan()
+    assert all(query) == ~s{SELECT 1 = ANY(foo) FROM schema AS s0}
+
+    query = TestSchema |> select([e], e.x == ^0 or e.x in ^[1, 2, 3] or e.x == ^4) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT ((s0.x = ?) OR s0.x IN (?,?,?)) OR (s0.x = ?) FROM schema AS s0}
+  end
+
+  test "in subquery" do
+    posts = subquery("posts" |> where(title: ^"hello") |> select([p], p.id))
+    query = "comments" |> where([c], c.post_id in subquery(posts)) |> select([c], c.x) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT c0.x FROM comments AS c0 } <>
+               ~s{WHERE (c0.post_id IN (SELECT sp0.id FROM posts AS sp0 WHERE (sp0.title = ?)))}
+
+    posts = subquery("posts" |> where(title: parent_as(:comment).subtitle) |> select([p], p.id))
+
+    query =
+      "comments"
+      |> from(as: :comment)
+      |> where([c], c.post_id in subquery(posts))
+      |> select([c], c.x)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT c0.x FROM comments AS c0 } <>
+               ~s{WHERE (c0.post_id IN (SELECT sp0.id FROM posts AS sp0 WHERE (sp0.title = c0.subtitle)))}
+  end
+
+  test "having" do
+    query = TestSchema |> having([p], p.x == p.x) |> select([p], p.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 HAVING (s0.x = s0.x)}
+
+    query =
+      TestSchema
+      |> having([p], p.x == p.x)
+      |> having([p], p.y == p.y)
+      |> select([p], [p.y, p.x])
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.y, s0.x FROM schema AS s0 HAVING (s0.x = s0.x) AND (s0.y = s0.y)}
+  end
+
+  test "or_having" do
+    query = TestSchema |> or_having([p], p.x == p.x) |> select([p], p.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 HAVING (s0.x = s0.x)}
+
+    query =
+      TestSchema
+      |> or_having([p], p.x == p.x)
+      |> or_having([p], p.y == p.y)
+      |> select([p], [p.y, p.x])
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.y, s0.x FROM schema AS s0 HAVING (s0.x = s0.x) OR (s0.y = s0.y)}
+  end
+
+  test "group by" do
+    query = TestSchema |> group_by([r], r.x) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 GROUP BY s0.x}
+
+    query = TestSchema |> group_by([r], 2) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 GROUP BY 2}
+
+    query = TestSchema |> group_by([r], [r.x, r.y]) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0 GROUP BY s0.x, s0.y}
+
+    query = TestSchema |> group_by([r], []) |> select([r], r.x) |> plan()
+    assert all(query) == ~s{SELECT s0.x FROM schema AS s0}
+  end
+
+  test "interpolated values" do
+    cte1 = "schema1" |> select([m], %{id: m.id, smth: ^true}) |> where([], fragment("?", ^1))
+    union = "schema1" |> select([m], {m.id, ^true}) |> where([], fragment("?", ^5))
+    union_all = "schema2" |> select([m], {m.id, ^false}) |> where([], fragment("?", ^6))
+
+    query =
+      TestSchema
+      |> with_cte("cte1", as: ^cte1)
+      |> with_cte("cte2", as: fragment("SELECT * FROM schema WHERE ?", ^2))
+      |> select([m], {m.id, ^0})
+      |> join(:inner, [], TestSchema2, on: fragment("?", ^true))
+      |> join(:inner, [], TestSchema2, on: fragment("?", ^false))
+      |> where([], fragment("?", ^true))
+      |> where([], fragment("?", ^false))
+      |> having([], fragment("?", ^true))
+      |> having([], fragment("?", ^false))
+      |> group_by([], fragment("?", ^3))
+      |> group_by([], fragment("?", ^4))
+      |> union(^union)
+      |> union_all(^union_all)
+      |> order_by([], fragment("?", ^7))
+      |> limit([], ^8)
+      |> offset([], ^9)
+      |> plan()
+
+    result =
+      "WITH cte1 AS (SELECT ss0.id AS id, ? AS smth FROM schema1 AS ss0 WHERE (?)), " <>
+        "cte2 AS (SELECT * FROM schema WHERE ?) " <>
+        "SELECT s0.id, ? FROM schema AS s0 INNER JOIN schema2 AS s1 ON ? " <>
+        "INNER JOIN schema2 AS s2 ON ? WHERE (?) AND (?) " <>
+        "GROUP BY ?, ? HAVING (?) AND (?) " <>
+        "UNION (SELECT s0.id, ? FROM schema1 AS s0 WHERE (?)) " <>
+        "UNION ALL (SELECT s0.id, ? FROM schema2 AS s0 WHERE (?)) " <>
+        "ORDER BY ? LIMIT ? OFFSET ?"
+
+    assert all(query) == String.trim(result)
+  end
+
+  test "fragments allow ? to be escaped with backslash" do
+    query =
+      plan(
+        from(e in "schema",
+          where: fragment("? = \"query\\?\"", e.start_time),
+          select: true
+        )
+      )
+
+    result =
+      "SELECT TRUE FROM schema AS s0 " <>
+        "WHERE (s0.start_time = \"query?\")"
+
+    assert all(query) == String.trim(result)
+  end
+
+  test "build_explain_query" do
+    assert SQL.build_explain_query("SELECT 1") == "EXPLAIN SELECT 1"
+  end
+
+  ## *_all
+
+  test "update all" do
+    query = from(m in TestSchema, update: [set: [x: 0]]) |> plan(:update_all)
+
+    assert update_all(query) ==
+             ~s{UPDATE schema AS s0 SET s0.x = 0}
+
+    query = from(m in TestSchema, update: [set: [x: 0], inc: [y: 1, z: -3]]) |> plan(:update_all)
+
+    assert update_all(query) ==
+             ~s{UPDATE schema AS s0 SET s0.x = 0, s0.y = s0.y + 1, s0.z = s0.z + -3}
+
+    query = from(e in TestSchema, where: e.x == 123, update: [set: [x: 0]]) |> plan(:update_all)
+
+    assert update_all(query) ==
+             ~s{UPDATE schema AS s0 SET s0.x = 0 WHERE (s0.x = 123)}
+
+    query = from(m in TestSchema, update: [set: [x: ^0]]) |> plan(:update_all)
+
+    assert update_all(query) ==
+             ~s{UPDATE schema AS s0 SET s0.x = ?}
+
+    query =
+      TestSchema
+      |> join(:inner, [p], q in TestSchema2, on: p.x == q.z)
+      |> update([_], set: [x: 0])
+      |> plan(:update_all)
+
+    assert update_all(query) ==
+             ~s{UPDATE schema AS s0, schema2 AS s1 SET s0.x = 0 WHERE (s0.x = s1.z)}
+
+    query =
+      from(e in TestSchema,
+        where: e.x == 123,
+        update: [set: [x: 0]],
+        join: q in TestSchema2,
+        on: e.x == q.z
+      )
+      |> plan(:update_all)
+
+    assert update_all(query) ==
+             ~s{UPDATE schema AS s0, schema2 AS s1 } <>
+               ~s{SET s0.x = 0 WHERE (s0.x = s1.z) AND (s0.x = 123)}
+
+    assert_raise ArgumentError, ":select is not supported in update_all by Snowflake", fn ->
+      query = from(e in TestSchema, where: e.x == 123, select: e.x)
+      update_all(query)
+    end
+  end
+
+  test "update all with subquery" do
+    sub = from(p in TestSchema, where: p.x > 10)
+
+    query =
+      TestSchema
+      |> join(:inner, [p], p2 in subquery(sub), on: p.id == p2.id)
+      |> update([_], set: [x: ^100])
+      |> plan(:update_all)
+
+    assert update_all(query) ==
+             ~s{UPDATE schema AS s0, } <>
+               ~s{(SELECT ss0.id AS id, ss0.x AS x, ss0.y AS y, ss0.z AS z, ss0.meta AS meta FROM schema AS ss0 WHERE (ss0.x > 10)) AS s1 } <>
+               ~s{SET s0.x = ? WHERE (s0.id = s1.id)}
+  end
+
+  test "update all with prefix" do
+    query =
+      from(m in TestSchema, update: [set: [x: 0]])
+      |> Map.put(:prefix, "prefix")
+      |> plan(:update_all)
+
+    assert update_all(query) == ~s{UPDATE prefix.schema AS s0 SET s0.x = 0}
+
+    query =
+      from(m in TestSchema, prefix: "first", update: [set: [x: 0]])
+      |> Map.put(:prefix, "prefix")
+      |> plan(:update_all)
+
+    assert update_all(query) == ~s{UPDATE first.schema AS s0 SET s0.x = 0}
+  end
+
+  test "delete all" do
+    query = TestSchema |> Queryable.to_query() |> plan()
+    assert delete_all(query) == ~s{DELETE  FROM schema AS s0}
+
+    query = from(e in TestSchema, where: e.x == 123) |> plan()
+
+    assert delete_all(query) ==
+             ~s{DELETE  FROM schema AS s0 WHERE (s0.x = 123)}
+
+    query = TestSchema |> join(:inner, [p], q in TestSchema2, on: p.x == q.z) |> plan()
+
+    assert delete_all(query) ==
+             ~s{DELETE  FROM schema AS s0 INNER JOIN schema2 AS s1 ON s0.x = s1.z}
+
+    query =
+      from(e in TestSchema, where: e.x == 123, join: q in TestSchema2, on: e.x == q.z) |> plan()
+
+    assert delete_all(query) ==
+             ~s{DELETE  FROM schema AS s0 } <>
+               ~s{INNER JOIN schema2 AS s1 ON s0.x = s1.z WHERE (s0.x = 123)}
+
+    assert_raise ArgumentError, ":select is not supported in delete_all by Snowflake", fn ->
+      query = from(e in TestSchema, where: e.x == 123, select: e.x)
+      delete_all(query)
+    end
+  end
+
+  test "delete all with prefix" do
+    query = TestSchema |> Queryable.to_query() |> Map.put(:prefix, "prefix") |> plan()
+    assert delete_all(query) == ~s{DELETE  FROM prefix.schema AS s0}
+
+    query = TestSchema |> from(prefix: "first") |> Map.put(:prefix, "prefix") |> plan()
+    assert delete_all(query) == ~s{DELETE  FROM first.schema AS s0}
+  end
+
+  ## Partitions and windows
+
+  describe "windows" do
+    test "one window" do
+      query =
+        TestSchema
+        |> select([r], r.x |> over(partition_by: r.x))
+        |> plan()
+
+      assert all(query) ==
+               ~s{SELECT s0.x OVER (PARTITION BY s0.x) FROM schema AS s0}
+    end
+
+    test "two windows" do
+      query =
+        TestSchema
+        |> select([r], {r.x |> over(partition_by: r.z), r.y |> over(partition_by: r.x)})
+        |> plan()
+
+      assert all(query) ==
+               ~s{SELECT s0.x OVER (PARTITION BY s0.z), s0.y OVER (PARTITION BY s0.x) FROM schema AS s0}
+    end
+
+    test "count over window" do
+      query =
+        TestSchema
+        |> select([r], count(r.x) |> over(partition_by: r.x))
+        |> plan()
+
+      assert all(query) ==
+               ~s{SELECT count(s0.x) OVER (PARTITION BY s0.x) FROM schema AS s0}
+    end
+
+    test "count over all" do
+      query =
+        TestSchema
+        |> select([r], count(r.x) |> over())
+        |> plan()
+
+      assert all(query) == ~s{SELECT count(s0.x) OVER () FROM schema AS s0}
+    end
+
+    test "row_number over all" do
+      query =
+        TestSchema
+        |> select(row_number |> over())
+        |> plan()
+
+      assert all(query) == ~s{SELECT row_number() OVER () FROM schema AS s0}
+    end
+
+    test "nth_value over all" do
+      query =
+        TestSchema
+        |> select([r], nth_value(r.x, 42) |> over())
+        |> plan()
+
+      assert all(query) == ~s{SELECT nth_value(s0.x, 42) OVER () FROM schema AS s0}
+    end
+
+    test "lag/2 over all" do
+      query =
+        TestSchema
+        |> select([r], lag(r.x, 42) |> over())
+        |> plan()
+
+      assert all(query) == ~s{SELECT lag(s0.x, 42) OVER () FROM schema AS s0}
+    end
+
+    test "custom aggregation over all" do
+      query =
+        TestSchema
+        |> select([r], fragment("custom_function(?)", r.x) |> over())
+        |> plan()
+
+      assert all(query) == ~s{SELECT custom_function(s0.x) OVER () FROM schema AS s0}
+    end
+
+    test "partition by and order by on window" do
+      query =
+        TestSchema
+        |> select([r], r.x |> over(partition_by: [r.x, r.z], order_by: r.x))
+        |> plan()
+
+      assert all(query) ==
+               ~s{SELECT s0.x OVER (PARTITION BY s0.x, s0.z ORDER BY s0.x) FROM schema AS s0}
+    end
+
+    test "partition by and order by on over" do
+      query =
+        TestSchema
+        |> select([r], count(r.x) |> over(partition_by: [r.x, r.z], order_by: r.x))
+
+      query = query |> plan()
+
+      assert all(query) ==
+               ~s{SELECT count(s0.x) OVER (PARTITION BY s0.x, s0.z ORDER BY s0.x) FROM schema AS s0}
+    end
+
+    test "frame clause" do
+      query =
+        TestSchema
+        |> select(
+          [r],
+          count(r.x)
+          |> over(
+            partition_by: [r.x, r.z],
+            order_by: r.x,
+            frame: fragment("ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING")
+          )
+        )
+
+      query = query |> plan()
+
+      assert all(query) ==
+               ~s{SELECT count(s0.x) OVER (PARTITION BY s0.x, s0.z ORDER BY s0.x ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING) FROM schema AS s0}
+    end
+  end
+
+  ## Joins
+
+  test "join" do
+    query =
+      TestSchema
+      |> join(:inner, [p], q in TestSchema2, on: p.x == q.z)
+      |> select([], true)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT TRUE FROM schema AS s0 INNER JOIN schema2 AS s1 ON s0.x = s1.z}
+
+    query =
+      TestSchema
+      |> join(:inner, [p], q in TestSchema2, on: p.x == q.z)
+      |> join(:inner, [], TestSchema, on: true)
+      |> select([], true)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT TRUE FROM schema AS s0 INNER JOIN schema2 AS s1 ON s0.x = s1.z } <>
+               ~s{INNER JOIN schema AS s2 ON TRUE}
+  end
+
+  test "join with hints" do
+    assert TestSchema
+           |> join(:inner, [p], q in TestSchema2,
+             hints: ["USE INDEX FOO", "USE INDEX BAR"],
+             on: true
+           )
+           |> select([], true)
+           |> plan()
+           |> all() ==
+             ~s{SELECT TRUE FROM schema AS s0 INNER JOIN schema2 AS s1 USE INDEX FOO USE INDEX BAR ON TRUE}
+  end
+
+  test "join with nothing bound" do
+    query =
+      TestSchema
+      |> join(:inner, [], q in TestSchema2, on: q.z == q.z)
+      |> select([], true)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT TRUE FROM schema AS s0 INNER JOIN schema2 AS s1 ON s1.z = s1.z}
+  end
+
+  test "join without schema" do
+    query =
+      "posts" |> join(:inner, [p], q in "comments", on: p.x == q.z) |> select([], true) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT TRUE FROM posts AS p0 INNER JOIN comments AS c1 ON p0.x = c1.z}
+  end
+
+  test "join with subquery" do
+    posts = subquery("posts" |> where(title: ^"hello") |> select([r], %{x: r.x, y: r.y}))
+
+    query =
+      "comments"
+      |> join(:inner, [c], p in subquery(posts), on: true)
+      |> select([_, p], p.x)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s1.x FROM comments AS c0 } <>
+               ~s{INNER JOIN (SELECT sp0.x AS x, sp0.y AS y FROM posts AS sp0 WHERE (sp0.title = ?)) AS s1 ON TRUE}
+
+    posts = subquery("posts" |> where(title: ^"hello") |> select([r], %{x: r.x, z: r.y}))
+
+    query =
+      "comments"
+      |> join(:inner, [c], p in subquery(posts), on: true)
+      |> select([_, p], p)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s1.x, s1.z FROM comments AS c0 } <>
+               ~s{INNER JOIN (SELECT sp0.x AS x, sp0.y AS z FROM posts AS sp0 WHERE (sp0.title = ?)) AS s1 ON TRUE}
+
+    posts =
+      subquery("posts" |> where(title: parent_as(:comment).subtitle) |> select([r], r.title))
+
+    query =
+      "comments"
+      |> from(as: :comment)
+      |> join(:inner, [c], p in subquery(posts), on: true)
+      |> select([_, p], p)
+      |> plan()
+
+    assert all(query) ==
+             "SELECT s1.title FROM comments AS c0 " <>
+               "INNER JOIN (SELECT sp0.title AS title FROM posts AS sp0 WHERE (sp0.title = c0.subtitle)) AS s1 ON TRUE"
+  end
+
+  test "join with prefix" do
+    query =
+      TestSchema
+      |> join(:inner, [p], q in TestSchema2, on: p.x == q.z)
+      |> select([], true)
+      |> Map.put(:prefix, "prefix")
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT TRUE FROM prefix.schema AS s0 INNER JOIN prefix.schema2 AS s1 ON s0.x = s1.z}
+
+    query =
+      TestSchema
+      |> from(prefix: "first")
+      |> join(:inner, [p], q in TestSchema2, on: p.x == q.z, prefix: "second")
+      |> select([], true)
+      |> Map.put(:prefix, "prefix")
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT TRUE FROM first.schema AS s0 INNER JOIN second.schema2 AS s1 ON s0.x = s1.z}
+  end
+
+  test "join with fragment" do
+    query =
+      TestSchema
+      |> join(
+        :inner,
+        [p],
+        q in fragment("SELECT * FROM schema2 AS s2 WHERE s2.id = ? AND s2.field = ?", p.x, ^10),
+        on: true
+      )
+      |> select([p], {p.id, ^0})
+      |> where([p], p.id > 0 and p.id < ^100)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.id, ? FROM schema AS s0 INNER JOIN } <>
+               ~s{(SELECT * FROM schema2 AS s2 WHERE s2.id = s0.x AND s2.field = ?) AS f1 ON TRUE } <>
+               ~s{WHERE ((s0.id > 0) AND (s0.id < ?))}
+  end
+
+  test "join with fragment and on defined" do
+    query =
+      TestSchema
+      |> join(:inner, [p], q in fragment("SELECT * FROM schema2"), on: q.id == p.id)
+      |> select([p], {p.id, ^0})
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.id, ? FROM schema AS s0 INNER JOIN } <>
+               ~s{(SELECT * FROM schema2) AS f1 ON f1.id = s0.id}
+  end
+
+  test "join with query interpolation" do
+    inner = Ecto.Queryable.to_query(TestSchema2)
+
+    query =
+      from(p in TestSchema, left_join: c in ^inner, on: true, select: {p.id, c.id}) |> plan()
+
+    assert all(query) ==
+             "SELECT s0.id, s1.id FROM schema AS s0 LEFT OUTER JOIN schema2 AS s1 ON TRUE"
+  end
+
+  test "lateral join with fragment" do
+    query =
+      TestSchema
+      |> join(
+        :inner_lateral,
+        [p],
+        q in fragment("SELECT * FROM schema2 AS s2 WHERE s2.id = ? AND s2.field = ?", p.x, ^10),
+        on: true
+      )
+      |> select([p, q], {p.id, q.z})
+      |> where([p], p.id > 0 and p.id < ^100)
+      |> plan()
+
+    assert all(query) ==
+             ~s{SELECT s0.id, f1.z FROM schema AS s0 INNER JOIN LATERAL } <>
+               ~s{(SELECT * FROM schema2 AS s2 WHERE s2.id = s0.x AND s2.field = ?) AS f1 ON TRUE } <>
+               ~s{WHERE ((s0.id > 0) AND (s0.id < ?))}
+  end
+
+  test "cross join" do
+    query = from(p in TestSchema, cross_join: c in TestSchema2, select: {p.id, c.id}) |> plan()
+
+    assert all(query) ==
+             "SELECT s0.id, s1.id FROM schema AS s0 CROSS JOIN schema2 AS s1"
+  end
+
+  test "join produces correct bindings" do
+    query = from(p in TestSchema, join: c in TestSchema2, on: true)
+    query = from(p in query, join: c in TestSchema2, on: true, select: {p.id, c.id})
+    query = plan(query)
+
+    assert all(query) ==
+             "SELECT s0.id, s2.id FROM schema AS s0 INNER JOIN schema2 AS s1 ON TRUE INNER JOIN schema2 AS s2 ON TRUE"
+  end
+
+  ## Associations
+
+  test "association join belongs_to" do
+    query = TestSchema2 |> join(:inner, [c], p in assoc(c, :post)) |> select([], true) |> plan()
+
+    assert all(query) ==
+             "SELECT TRUE FROM schema2 AS s0 INNER JOIN schema AS s1 ON s1.x = s0.z"
+  end
+
+  test "association join has_many" do
+    query =
+      TestSchema |> join(:inner, [p], c in assoc(p, :comments)) |> select([], true) |> plan()
+
+    assert all(query) ==
+             "SELECT TRUE FROM schema AS s0 INNER JOIN schema2 AS s1 ON s1.z = s0.x"
+  end
+
+  test "association join has_one" do
+    query =
+      TestSchema |> join(:inner, [p], pp in assoc(p, :permalink)) |> select([], true) |> plan()
+
+    assert all(query) ==
+             "SELECT TRUE FROM schema AS s0 INNER JOIN schema3 AS s1 ON s1.id = s0.y"
+  end
+
+  # Schema based
+
+  test "insert" do
+    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {:raise, [], []}, [])
+    assert query == ~s{INSERT INTO schema (x,y) VALUES (?,?)}
+
+    query = insert(nil, "schema", [:x, :y], [[:x, :y], [nil, :y]], {:raise, [], []}, [])
+    assert query == ~s{INSERT INTO schema (x,y) VALUES (?,?),(DEFAULT,?)}
+
+    query = insert(nil, "schema", [], [[]], {:raise, [], []}, [])
+    assert query == ~s{INSERT INTO schema () VALUES ()}
+
+    query = insert("prefix", "schema", [], [[]], {:raise, [], []}, [])
+    assert query == ~s{INSERT INTO prefix.schema () VALUES ()}
+
+    assert_raise ArgumentError,
+                 ":returning is not supported in insert/insert_all by Snowflake",
+                 fn ->
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {:raise, [], []}, [:x, :y])
+                 end
+  end
+
+  test "insert with on duplicate key" do
+    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {:nothing, [], []}, [])
+
+    assert query ==
+             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE x = x}
+
+    update = from("schema", update: [set: [z: "foo"]]) |> plan(:update_all)
+    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
+
+    assert query ==
+             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE z = 'foo'}
+
+    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], []}, [])
+
+    assert query ==
+             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE x = VALUES(x),y = VALUES(y)}
+
+    assert_raise ArgumentError,
+                 ":conflict_target is not supported in insert/insert_all by Snowflake",
+                 fn ->
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], [:x]}, [])
+                 end
+
+    assert_raise ArgumentError,
+                 "Using a query with :where in combination with the :on_conflict option is not supported by Snowflake",
+                 fn ->
+                   update =
+                     from("schema", update: [set: [x: ^"foo"]], where: [z: "bar"])
+                     |> plan(:update_all)
+
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
+                 end
+  end
+
+  test "insert with query" do
+    select_query = from("schema", select: [:id]) |> plan(:all)
+
+    query =
+      insert(
+        nil,
+        "schema",
+        [:x, :y, :z],
+        [[:x, {select_query, 2}, :z], [nil, nil, {select_query, 1}]],
+        {:raise, [], []},
+        []
+      )
+
+    assert query ==
+             ~s{INSERT INTO schema (x,y,z) VALUES (?,(SELECT s0.id FROM schema AS s0),?),(DEFAULT,DEFAULT,(SELECT s0.id FROM schema AS s0))}
+  end
+
+  test "insert with query as rows" do
+    query = from(s in "schema", select: %{foo: fragment("3"), bar: s.bar}) |> plan(:all)
+    query = insert(nil, "schema", [:foo, :bar], query, {:raise, [], []}, [])
+
+    assert query ==
+             ~s{INSERT INTO schema (foo,bar) (SELECT 3, s0.bar FROM schema AS s0)}
+  end
+
+  test "update" do
+    query = update(nil, "schema", [:id], [x: 1, y: 2], [])
+    assert query == ~s{UPDATE schema SET id = ? WHERE x = ? AND y = ?}
+
+    query = update("prefix", "schema", [:id], [x: 1, y: 2], [])
+    assert query == ~s{UPDATE prefix.schema SET id = ? WHERE x = ? AND y = ?}
+
+    query = update("prefix", "schema", [:id], [x: 1, y: nil], [])
+    assert query == ~s{UPDATE prefix.schema SET id = ? WHERE x = ? AND y IS NULL}
+  end
+
+  test "delete" do
+    query = delete(nil, "schema", [x: 1, y: 2], [])
+    assert query == ~s{DELETE FROM schema WHERE x = ? AND y = ?}
+
+    query = delete("prefix", "schema", [x: 1, y: 2], [])
+    assert query == ~s{DELETE FROM prefix.schema WHERE x = ? AND y = ?}
+
+    query = delete(nil, "schema", [x: nil, y: 1], [])
+    assert query == ~s{DELETE FROM schema WHERE x IS NULL AND y = ?}
+  end
+
+  # Unsupported types and clauses
+
+  test "arrays" do
+    assert_raise Ecto.QueryError, ~r"Array type is not supported by Snowflake", fn ->
+      query = TestSchema |> select([], fragment("?", [1, 2, 3])) |> plan()
+      all(query)
+    end
+  end
+end
