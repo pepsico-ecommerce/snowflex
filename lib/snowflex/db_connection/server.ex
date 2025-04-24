@@ -104,7 +104,7 @@ defmodule Snowflex.DBConnection.Server do
       case :odbc.sql_query(pid, to_charlist(statement)) do
         {:error, reason} ->
           error = Error.exception(reason)
-          Logger.warn("Unable to execute query: #{error.message}")
+          Logger.warning("Unable to execute query: #{error.message}")
 
           {:reply, {:error, error}, state}
 
@@ -133,7 +133,7 @@ defmodule Snowflex.DBConnection.Server do
       case :odbc.param_query(pid, to_charlist(statement), params) do
         {:error, reason} ->
           error = Error.exception(reason)
-          Logger.warn("Unable to execute query: #{error.message}")
+          Logger.warning("Unable to execute query: #{error.message}")
 
           {:reply, {:error, error}, state}
 
@@ -161,7 +161,7 @@ defmodule Snowflex.DBConnection.Server do
         {:noreply, %{pid: pid, backoff: :backoff.succeed(backoff), state: :connected}}
 
       {:error, reason} ->
-        Logger.warn("Unable to connect to snowflake: #{inspect(reason)}")
+        Logger.warning("Unable to connect to snowflake: #{inspect(reason)}")
 
         seconds =
           backoff

@@ -9,7 +9,7 @@ defmodule Snowflex.MixProject do
       app: :snowflex,
       name: "Snowflex",
       version: @version,
-      elixir: "~> 1.9",
+      elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
