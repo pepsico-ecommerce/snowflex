@@ -11,6 +11,8 @@ defmodule Snowflex.Transport.Http do
   * `:account_name` - Your Snowflake account identifier (e.g., "my-org-my-account")
   * `:username` - Your Snowflake username
   * `:private_key_path` - Path to your private key file (PEM format)
+  * `:private_key_password` - Password for your private key file (if encrypted),
+    otherwise this must be explicitly set to `nil`.
   * `:public_key_fingerprint` - Fingerprint of your public key
 
   ### Optional Options
@@ -78,6 +80,7 @@ defmodule Snowflex.Transport.Http do
       :account_name,
       :username,
       :private_key,
+      :private_key_password,
       :req_client,
       :timeout,
       :token_lifetime,
@@ -97,6 +100,7 @@ defmodule Snowflex.Transport.Http do
             account_name: String.t(),
             username: String.t(),
             private_key: String.t(),
+            private_key_password: String.t() | nil,
             req_client: Req.Request.t(),
             timeout: integer(),
             token_lifetime: integer(),
@@ -305,11 +309,21 @@ defmodule Snowflex.Transport.Http do
   # Init/Config Helpers
   defp validate_opts(opts) do
     Enum.reduce_while(
-      [:account_name, :username, :private_key_path, :public_key_fingerprint],
+      [
+        :account_name,
+        :username,
+        :private_key_path,
+        :private_key_password,
+        :public_key_fingerprint
+      ],
       {:ok, opts},
       fn
         key, validated_opts ->
           case Keyword.fetch(opts, key) do
+            #nil is valid for private_key_password if user's private_key is not encrypted
+            {:ok, nil} when key in [:private_key_password] ->
+              {:cont, validated_opts}
+
             {:ok, value} when is_binary(value) and byte_size(value) > 0 ->
               {:cont, validated_opts}
 
@@ -327,6 +341,9 @@ defmodule Snowflex.Transport.Http do
        username: Keyword.fetch!(validated_opts, :username),
        public_key_fingerprint: Keyword.fetch!(validated_opts, :public_key_fingerprint),
        private_key: private_key,
+       # if private_key_password is nil, update it to an empty string which
+       # :public_key.pem_entry_decode/2 will interpret as no password.
+       private_key_password: Keyword.get(validated_opts, :private_key_password) || ~c"",
        current_statement: nil,
        timeout: Keyword.get(validated_opts, :timeout, @default_timeout),
        token_lifetime: Keyword.get(validated_opts, :token_lifetime, @default_token_lifetime),
@@ -379,7 +396,7 @@ defmodule Snowflex.Transport.Http do
     username = String.upcase(state.username)
 
     [pem_entry] = :public_key.pem_decode(state.private_key)
-    private_key = :public_key.pem_entry_decode(pem_entry)
+    private_key = :public_key.pem_entry_decode(pem_entry, state.private_key_password)
     jwk = JWK.from_key(private_key)
 
     claims = %{
