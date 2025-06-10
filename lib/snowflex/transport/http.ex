@@ -20,6 +20,7 @@ defmodule Snowflex.Transport.Http do
   * `:role` - Default role to use
   * `:timeout` - Query timeout in milliseconds (default: 45 seconds)
   * `:token_lifetime` - JWT token lifetime in milliseconds (default: 10 minutes)
+  * `:private_key_password` - Password for the private key (if encrypted)
 
   ## Account Name Handling
 
@@ -72,12 +73,13 @@ defmodule Snowflex.Transport.Http do
   @default_timeout :timer.seconds(45)
   defmodule State do
     @moduledoc false
-    @derive {Inspect, except: [:private_key, :token]}
+    @derive {Inspect, except: [:private_key, :token, :private_key_password]}
 
     defstruct [
       :account_name,
       :username,
       :private_key,
+      :private_key_password,
       :req_client,
       :timeout,
       :token_lifetime,
@@ -97,6 +99,7 @@ defmodule Snowflex.Transport.Http do
             account_name: String.t(),
             username: String.t(),
             private_key: String.t(),
+            private_key_password: String.t() | nil,
             req_client: Req.Request.t(),
             timeout: integer(),
             token_lifetime: integer(),
@@ -327,6 +330,7 @@ defmodule Snowflex.Transport.Http do
        username: Keyword.fetch!(validated_opts, :username),
        public_key_fingerprint: Keyword.fetch!(validated_opts, :public_key_fingerprint),
        private_key: private_key,
+       private_key_password: Keyword.get(validated_opts, :private_key_password, ~c""),
        current_statement: nil,
        timeout: Keyword.get(validated_opts, :timeout, @default_timeout),
        token_lifetime: Keyword.get(validated_opts, :token_lifetime, @default_token_lifetime),
@@ -379,7 +383,7 @@ defmodule Snowflex.Transport.Http do
     username = String.upcase(state.username)
 
     [pem_entry] = :public_key.pem_decode(state.private_key)
-    private_key = :public_key.pem_entry_decode(pem_entry)
+    private_key = :public_key.pem_entry_decode(pem_entry, state.private_key_password)
     jwk = JWK.from_key(private_key)
 
     claims = %{
