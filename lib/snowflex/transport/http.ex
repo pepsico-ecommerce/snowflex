@@ -148,6 +148,29 @@ defmodule Snowflex.Transport.Http do
     :ok
   end
 
+  @doc """
+  Execute an API Request via `Req.request/2`.
+
+  This is useful when you need to execute an arbitrary API request against Snowflake's REST API.
+
+  For example, if you want to use Snowfake Cortex, you might pass in:
+
+  ```elixir
+  Snowflex.Transport.Http.api(pid, %{
+    method: :post,
+    url: "/api/v2/cortex/analyst/message",
+    json: %{messages: [%{role: "user", content: "Hello, how are you?"}]}
+  })
+  ```
+
+  For more information on available `opts`, refer to `Req.new/1`.
+
+  """
+  @spec api(pid(), Req.request_opts()) :: {:ok, Req.response()} | {:error, Error.t()}
+  def api(pid, opts) do
+    GenServer.call(pid, {:api, opts})
+  end
+
   defp add_default_timeout(opts) do
     Keyword.put_new(opts, :timeout, :timer.seconds(45))
   end
@@ -161,6 +184,15 @@ defmodule Snowflex.Transport.Http do
          {:ok, state} <- init_state(validated_opts, private_key),
          {:ok, state} <- refresh_token(state) do
       check_connection(state)
+    end
+  end
+
+  def handle_call({:api, opts}, _from, state) do
+    with {:ok, state} <- ensure_valid_token(state),
+         {:ok, response} <- execute_api_req(state, opts) do
+      {:reply, {:ok, response}, state}
+    else
+      {:error, error} -> {:reply, {:error, error}, state}
     end
   end
 
@@ -181,7 +213,6 @@ defmodule Snowflex.Transport.Http do
     end
   end
 
-  @impl GenServer
   def handle_call({:declare, statement, params, opts}, _from, state) do
     with {:ok, state} <- ensure_valid_token(state),
          {:ok,
@@ -202,7 +233,6 @@ defmodule Snowflex.Transport.Http do
     end
   end
 
-  @impl GenServer
   def handle_call(
         {:fetch, max_partition, opts},
         _from,
@@ -232,7 +262,6 @@ defmodule Snowflex.Transport.Http do
   end
 
   # No more partitions to call, but we do have a current statement
-  @impl GenServer
   def handle_call(
         {:fetch, _max_partition, _num_rows},
         _from,
@@ -484,6 +513,21 @@ defmodule Snowflex.Transport.Http do
   end
 
   # HTTP Calls
+
+  defp execute_api_req(state, opts) do
+    case Req.request(state.req_client, opts) do
+      {:ok, response} ->
+        {:ok, response}
+
+      {:error, exception} ->
+        {:error,
+         %Error{
+           message: inspect(exception),
+           code: "HTTP_ERROR",
+           metadata: %{opts: opts}
+         }}
+    end
+  end
 
   defp fetch_statement(state, statement, params, opts) do
     req_body = %{
