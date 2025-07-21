@@ -10,13 +10,19 @@ defmodule Snowflex.Result do
   * `:metadata` - Additional metadata about the query execution
   * `:messages` - Any messages returned by Snowflake during query execution
   * `:query` - The SQL statement that was executed
+  * `:query_id` - The ID of the query that was executed
+  * `:request_id` - The ID of the request that was executed
+  * `:sql_state` - The SQL state of the query that was executed
   """
   defstruct columns: nil,
             rows: nil,
             num_rows: 0,
             metadata: [],
             messages: [],
-            query: nil
+            query: nil,
+            query_id: nil,
+            request_id: nil,
+            sql_state: nil
 
   @type t :: %__MODULE__{
           columns: [String.t()] | nil,
@@ -24,6 +30,9 @@ defmodule Snowflex.Result do
           num_rows: integer(),
           metadata: [map()],
           messages: [map()],
-          query: Snowflex.Query.t() | nil
+          query: Snowflex.Query.t() | nil,
+          query_id: String.t() | nil,
+          request_id: String.t() | nil,
+          sql_state: String.t() | nil
         }
 end

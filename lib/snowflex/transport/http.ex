@@ -21,6 +21,7 @@ defmodule Snowflex.Transport.Http do
   * `:timeout` - Query timeout in milliseconds (default: 45 seconds)
   * `:token_lifetime` - JWT token lifetime in milliseconds (default: 10 minutes)
   * `:private_key_password` - Password for the private key (if encrypted)
+  * `:async_poll_interval` - Interval in milliseconds to poll for async execution status (default: 1000)
 
   ## Account Name Handling
 
@@ -92,7 +93,8 @@ defmodule Snowflex.Transport.Http do
       :warehouse,
       :role,
       :public_key_fingerprint,
-      :result_metadata
+      :result_metadata,
+      :async_poll_interval
     ]
 
     @type t :: %__MODULE__{
@@ -112,7 +114,8 @@ defmodule Snowflex.Transport.Http do
             warehouse: String.t() | nil,
             role: String.t() | nil,
             public_key_fingerprint: String.t() | nil,
-            result_metadata: map() | nil
+            result_metadata: map() | nil,
+            async_poll_interval: non_neg_integer()
           }
   end
 
@@ -149,26 +152,16 @@ defmodule Snowflex.Transport.Http do
   end
 
   @doc """
-  Execute an API Request via `Req.request/2`.
+  Returns the current `Req.request_client/0` for the transport.
 
-  This is useful when you need to execute an arbitrary API request against Snowflake's REST API.
+  This is useful when you need to execute an arbitrary API request against Snowflake's REST API,
+  and want to use the authentication token from the transport.
 
-  For example, if you want to use Snowfake Cortex, you might pass in:
-
-  ```elixir
-  Snowflex.Transport.Http.api(pid, %{
-    method: :post,
-    url: "/api/v2/cortex/analyst/message",
-    json: %{messages: [%{role: "user", content: "Hello, how are you?"}]}
-  })
-  ```
-
-  For more information on available `opts`, refer to `Req.new/1`.
-
+  This function ensures that the token is refreshed if it is expired.
   """
-  @spec api(pid(), Req.request_opts()) :: {:ok, Req.response()} | {:error, Error.t()}
-  def api(pid, opts) do
-    GenServer.call(pid, {:api, opts})
+  # @spec client(GenServer.server()) :: {:ok, Req.request_client()} | {:error, Error.t()}
+  def client(pid) do
+    GenServer.call(pid, :client)
   end
 
   defp add_default_timeout(opts) do
@@ -187,10 +180,9 @@ defmodule Snowflex.Transport.Http do
     end
   end
 
-  def handle_call({:api, opts}, _from, state) do
-    with {:ok, state} <- ensure_valid_token(state),
-         {:ok, response} <- execute_api_req(state, opts) do
-      {:reply, {:ok, response}, state}
+  def handle_call(:client, _from, state) do
+    with {:ok, state} <- ensure_valid_token(state) do
+      {:reply, {:ok, state.req_client}, state}
     else
       {:error, error} -> {:reply, {:error, error}, state}
     end
@@ -200,9 +192,12 @@ defmodule Snowflex.Transport.Http do
   def handle_call({:execute, statement, params, opts}, _from, state) do
     with {:ok, state} <- ensure_valid_token(state),
          # Execute the first request.
+         {:ok, status, body} <- fetch_statement(state, statement, params, opts),
+         #  After 45 seconds, Snowflake will return a 202 status code and a body with a statementHandle
+         #  We need to poll for the result set
+         {:ok, body} <- await_async_execution(state, status, body),
          # Once we have the initial body, we might need to make additional requests
          # to gather the partitions
-         {:ok, body} <- fetch_statement(state, statement, params, opts),
          # We will reduce over the partitions to get the full result set
          {:ok, raw_result} <- gather_results(state, body, opts) do
       # And then format it for return
@@ -215,7 +210,7 @@ defmodule Snowflex.Transport.Http do
 
   def handle_call({:declare, statement, params, opts}, _from, state) do
     with {:ok, state} <- ensure_valid_token(state),
-         {:ok,
+         {:ok, _status,
           %{
             "statementHandle" => statement_handle,
             "resultSetMetaData" => %{"partitionInfo" => partitions} = metadata
@@ -278,6 +273,24 @@ defmodule Snowflex.Transport.Http do
   end
 
   ## Query helpers
+
+  defp await_async_execution(state, 202, %{"statementHandle" => statement_handle}) do
+    url = "/api/v2/statements/#{statement_handle}"
+
+    case Req.get(state.req_client, url: url, receive_timeout: state.timeout) do
+      {:ok, %{status: 202, body: body}} ->
+        Process.sleep(state.async_poll_interval)
+        await_async_execution(state, 202, body)
+
+      {:ok, %{status: status, body: body}} when status in 200..299 ->
+        {:ok, body}
+
+      {:ok, %{body: %{"code" => code, "message" => message}}} ->
+        {:error, %Error{message: String.replace(message, ~r/\n/, " "), code: code}}
+    end
+  end
+
+  defp await_async_execution(_state, _status, body), do: {:ok, body}
 
   defp gather_results(
          state,
@@ -366,13 +379,14 @@ defmodule Snowflex.Transport.Http do
        database: Keyword.get(validated_opts, :database),
        schema: Keyword.get(validated_opts, :schema),
        warehouse: Keyword.get(validated_opts, :warehouse),
-       role: Keyword.get(validated_opts, :role)
+       role: Keyword.get(validated_opts, :role),
+       async_poll_interval: Keyword.get(validated_opts, :async_poll_interval, 1000)
      }}
   end
 
   defp check_connection(state) do
     case fetch_statement(state, "SELECT 1", %{}, timeout: state.timeout) do
-      {:ok, _body} ->
+      {:ok, _status, _body} ->
         {:ok, state}
 
       {:error, error} ->
@@ -480,7 +494,7 @@ defmodule Snowflex.Transport.Http do
           "numRowsInserted" => num_rows
         }
       } ->
-        %Result{columns: [], rows: nil, num_rows: num_rows, metadata: %{}}
+        result(body, %{columns: [], rows: nil, num_rows: num_rows})
 
       %{
         "resultSetMetaData" => %{
@@ -490,44 +504,39 @@ defmodule Snowflex.Transport.Http do
           "numRowsDeleted" => num_rows
         }
       } ->
-        %Result{columns: [], rows: nil, num_rows: num_rows, metadata: %{}}
+        result(body, %{columns: [], rows: nil, num_rows: num_rows})
 
       %{"data" => data, "resultSetMetaData" => metadata} ->
         columns = Enum.map(metadata["rowType"], & &1["name"])
         rows = data
 
-        %Result{
+        result(body, %{
           columns: columns,
           rows: rows,
           num_rows: length(rows),
           metadata: metadata
-        }
+        })
 
       # Calls to additional partitions will not bring back the result set metadata
       %{"data" => data} ->
-        %Result{rows: data, num_rows: length(data)}
+        result(body, %{rows: data, num_rows: length(data)})
 
       _any ->
-        %Result{messages: [body["message"] || "Query executed successfully"]}
+        result(body, %{messages: [body["message"] || "Query executed successfully"]})
     end
+  end
+
+  defp result(body, attrs) do
+    %{
+      query_id: body["statementHandle"],
+      request_id: body["requestId"],
+      sql_state: body["sqlState"]
+    }
+    |> Map.merge(attrs)
+    |> then(&struct!(Result, &1))
   end
 
   # HTTP Calls
-
-  defp execute_api_req(state, opts) do
-    case Req.request(state.req_client, opts) do
-      {:ok, response} ->
-        {:ok, response}
-
-      {:error, exception} ->
-        {:error,
-         %Error{
-           message: inspect(exception),
-           code: "HTTP_ERROR",
-           metadata: %{opts: opts}
-         }}
-    end
-  end
 
   defp fetch_statement(state, statement, params, opts) do
     req_body = %{
@@ -545,7 +554,7 @@ defmodule Snowflex.Transport.Http do
 
     case Req.post(state.req_client, url: url, json: req_body, receive_timeout: opts[:timeout]) do
       {:ok, %{status: status, body: body}} when status in 200..299 ->
-        {:ok, body}
+        {:ok, status, body}
 
       {:ok, %{body: %{"code" => code, "message" => message}} = body} ->
         {:error,
