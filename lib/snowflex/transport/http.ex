@@ -74,20 +74,17 @@ defmodule Snowflex.Transport.Http do
   @default_timeout :timer.seconds(45)
   defmodule State do
     @moduledoc false
-    @derive {Inspect, except: [:private_key, :token, :private_key_password]}
+    @derive {Inspect, except: [:private_key, :private_key_password]}
 
     defstruct [
       :account_name,
       :username,
       :private_key,
       :private_key_password,
-      :req_client,
       :timeout,
       :token_lifetime,
       :current_statement,
       :current_partition,
-      :token,
-      :token_expires_at,
       :database,
       :schema,
       :warehouse,
@@ -102,13 +99,10 @@ defmodule Snowflex.Transport.Http do
             username: String.t(),
             private_key: String.t(),
             private_key_password: String.t() | nil,
-            req_client: Req.Request.t(),
             timeout: integer(),
             token_lifetime: integer(),
             current_statement: String.t() | nil,
             current_partition: integer() | nil,
-            token: String.t() | nil,
-            token_expires_at: integer() | nil,
             database: String.t() | nil,
             schema: String.t() | nil,
             warehouse: String.t() | nil,
@@ -174,25 +168,18 @@ defmodule Snowflex.Transport.Http do
   def init(opts) do
     with {:ok, validated_opts} <- validate_opts(opts),
          {:ok, private_key} <- read_private_key(validated_opts),
-         {:ok, state} <- init_state(validated_opts, private_key),
-         {:ok, state} <- refresh_token(state) do
+         {:ok, state} <- init_state(validated_opts, private_key) do
       check_connection(state)
     end
   end
 
   def handle_call(:client, _from, state) do
-    with {:ok, state} <- ensure_valid_token(state) do
-      {:reply, {:ok, state.req_client}, state}
-    else
-      {:error, error} -> {:reply, {:error, error}, state}
-    end
+    {:reply, {:ok, build_req_client(state)}, state}
   end
 
   @impl GenServer
   def handle_call({:execute, statement, params, opts}, _from, state) do
-    with {:ok, state} <- ensure_valid_token(state),
-         # Execute the first request.
-         {:ok, status, body} <- fetch_statement(state, statement, params, opts),
+    with {:ok, status, body} <- fetch_statement(state, statement, params, opts),
          #  After 45 seconds, Snowflake will return a 202 status code and a body with a statementHandle
          #  We need to poll for the result set
          {:ok, body} <- await_async_execution(state, status, body),
@@ -209,8 +196,7 @@ defmodule Snowflex.Transport.Http do
   end
 
   def handle_call({:declare, statement, params, opts}, _from, state) do
-    with {:ok, state} <- ensure_valid_token(state),
-         {:ok, _status,
+    with {:ok, _status,
           %{
             "statementHandle" => statement_handle,
             "resultSetMetaData" => %{"partitionInfo" => partitions} = metadata
@@ -238,8 +224,7 @@ defmodule Snowflex.Transport.Http do
         } = state
       )
       when current_partition <= max_partition do
-    with {:ok, state} <- ensure_valid_token(state),
-         {:ok, result} <-
+    with {:ok, result} <-
            fetch_partition(state, current_statement, current_partition, opts) do
       result = format_response_body(result)
 
@@ -277,7 +262,9 @@ defmodule Snowflex.Transport.Http do
   defp await_async_execution(state, 202, %{"statementHandle" => statement_handle}) do
     url = "/api/v2/statements/#{statement_handle}"
 
-    case Req.get(state.req_client, url: url, receive_timeout: state.timeout) do
+    req_client = build_req_client(state)
+
+    case Req.get(req_client, url: url, receive_timeout: state.timeout) do
       {:ok, %{status: 202, body: body}} ->
         Process.sleep(state.async_poll_interval)
         await_async_execution(state, 202, body)
@@ -408,17 +395,7 @@ defmodule Snowflex.Transport.Http do
 
   # Token helpers
 
-  defp ensure_valid_token(state) do
-    now = System.system_time(:second)
-
-    if is_nil(state.token) or now >= state.token_expires_at do
-      refresh_token(state)
-    else
-      {:ok, state}
-    end
-  end
-
-  defp refresh_token(state) do
+  defp generate_token(state) do
     now = System.system_time(:second)
     expires_at = now + state.token_lifetime
 
@@ -440,14 +417,7 @@ defmodule Snowflex.Transport.Http do
     jwt = JWT.sign(jwk, jws, claims)
     {_, token} = JWS.compact(jwt)
 
-    state = %{
-      state
-      | token: token,
-        token_expires_at: expires_at,
-        req_client: build_req_client(state.account_name, token)
-    }
-
-    {:ok, state}
+    token
   end
 
   defp prepare_account_name_for_jwt(raw_account) do
@@ -469,13 +439,13 @@ defmodule Snowflex.Transport.Http do
 
   # HTTP
 
-  defp build_req_client(account_name, token) do
-    base_url = "https://#{account_name}.snowflakecomputing.com"
+  defp build_req_client(state) do
+    base_url = "https://#{state.account_name}.snowflakecomputing.com"
 
     Req.new(
       base_url: base_url,
       headers: [
-        {"Authorization", "Bearer #{token}"},
+        {"Authorization", "Bearer #{generate_token(state)}"},
         {"Content-Type", "application/json"},
         {"Accept", "application/json"},
         {"User-Agent", "snowflex/1.0.0"},
@@ -552,7 +522,9 @@ defmodule Snowflex.Transport.Http do
 
     url = "/api/v2/statements"
 
-    case Req.post(state.req_client, url: url, json: req_body, receive_timeout: opts[:timeout]) do
+    req_client = build_req_client(state)
+
+    case Req.post(req_client, url: url, json: req_body, receive_timeout: opts[:timeout]) do
       {:ok, %{status: status, body: body}} when status in 200..299 ->
         {:ok, status, body}
 
@@ -594,8 +566,9 @@ defmodule Snowflex.Transport.Http do
   defp fetch_partition(state, statement_handle, partition_index, opts) do
     url = "/api/v2/statements/#{statement_handle}"
     params = %{partition: partition_index}
+    req_client = build_req_client(state)
 
-    case Req.get(state.req_client, url: url, params: params, receive_timeout: opts[:timeout]) do
+    case Req.get(req_client, url: url, params: params, receive_timeout: opts[:timeout]) do
       {:ok, %{status: status, body: partition_body}} when status in 200..299 ->
         {:ok, partition_body}
 
