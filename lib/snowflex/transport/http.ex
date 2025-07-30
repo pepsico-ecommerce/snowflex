@@ -22,6 +22,10 @@ defmodule Snowflex.Transport.Http do
   * `:token_lifetime` - JWT token lifetime in milliseconds (default: 10 minutes)
   * `:private_key_password` - Password for the private key (if encrypted)
   * `:async_poll_interval` - Interval in milliseconds to poll for async execution status (default: 1000)
+  * `:max_retries` - Maximum retry attempts for rate limits (default: 3)
+  * `:retry_base_delay` - Base delay for exponential backoff in milliseconds (default: 1000)
+  * `:retry_max_delay` - Maximum delay between retries in milliseconds (default: 8000)
+  * `:max_partition_concurrency` - Maximum concurrent partition fetches (default: 5)
 
   ## Account Name Handling
 
@@ -56,7 +60,12 @@ defmodule Snowflex.Transport.Http do
     warehouse: "MY_WH",
     role: "MY_ROLE",
     timeout: :timer.seconds(30),
-    token_lifetime: :timer.minutes(15)
+    token_lifetime: :timer.minutes(15),
+    # Retry configuration
+    max_retries: 3,
+    retry_base_delay: :timer.seconds(1),
+    retry_max_delay: :timer.seconds(8),
+    max_partition_concurrency: 5
   ```
   """
   @behaviour Snowflex.Transport
@@ -91,7 +100,11 @@ defmodule Snowflex.Transport.Http do
       :role,
       :public_key_fingerprint,
       :result_metadata,
-      :async_poll_interval
+      :async_poll_interval,
+      :max_retries,
+      :retry_base_delay,
+      :retry_max_delay,
+      :max_partition_concurrency
     ]
 
     @type t :: %__MODULE__{
@@ -109,7 +122,11 @@ defmodule Snowflex.Transport.Http do
             role: String.t() | nil,
             public_key_fingerprint: String.t() | nil,
             result_metadata: map() | nil,
-            async_poll_interval: non_neg_integer()
+            async_poll_interval: non_neg_integer(),
+            max_retries: non_neg_integer(),
+            retry_base_delay: non_neg_integer(),
+            retry_max_delay: non_neg_integer(),
+            max_partition_concurrency: non_neg_integer()
           }
   end
 
@@ -292,7 +309,13 @@ defmodule Snowflex.Transport.Http do
 
     partition_count = length(partition_info)
     rest_partitions = Enum.to_list(1..(partition_count - 1)//1)
-    max_concurrency = System.schedulers_online()
+
+    # Reduce concurrency to avoid thundering herd on rate limits
+    base_concurrency = System.schedulers_online()
+    max_concurrency = min(base_concurrency, state.max_partition_concurrency)
+
+    # Extended timeout to account for Req retries
+    extended_timeout = opts[:timeout] + :timer.seconds(30)
 
     # Fetch partitions in parallel
     Task.Supervisor.async_stream_nolink(
@@ -303,7 +326,7 @@ defmodule Snowflex.Transport.Http do
       end,
       max_concurrency: max_concurrency,
       ordered: true,
-      timeout: opts[:timeout],
+      timeout: extended_timeout,
       on_timeout: :kill_task
     )
     |> Enum.reduce_while({:ok, initial_data}, fn
@@ -367,7 +390,11 @@ defmodule Snowflex.Transport.Http do
        schema: Keyword.get(validated_opts, :schema),
        warehouse: Keyword.get(validated_opts, :warehouse),
        role: Keyword.get(validated_opts, :role),
-       async_poll_interval: Keyword.get(validated_opts, :async_poll_interval, 1000)
+       async_poll_interval: Keyword.get(validated_opts, :async_poll_interval, 1000),
+       max_retries: Keyword.get(validated_opts, :max_retries, 3),
+       retry_base_delay: Keyword.get(validated_opts, :retry_base_delay, 1000),
+       retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000),
+       max_partition_concurrency: Keyword.get(validated_opts, :max_partition_concurrency, 5)
      }}
   end
 
@@ -452,6 +479,21 @@ defmodule Snowflex.Transport.Http do
         {"X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT"}
       ]
     )
+    |> Req.Request.put_plug(:retry,
+      retry: :safe_transient,  # Automatically retries 429, 502, 503, 504
+      delay: fn attempt ->
+        calculate_backoff_delay(attempt, state.retry_base_delay, state.retry_max_delay)
+      end,
+      max_retries: state.max_retries
+    )
+  end
+
+  defp calculate_backoff_delay(attempt, base_delay, max_delay) do
+    # Exponential backoff with jitter
+    exponential_delay = base_delay * :math.pow(2, attempt - 1)
+    capped_delay = min(exponential_delay, max_delay)
+    jitter = :rand.uniform() * 0.1 * capped_delay
+    trunc(capped_delay + jitter)
   end
 
   defp format_response_body(body) do
