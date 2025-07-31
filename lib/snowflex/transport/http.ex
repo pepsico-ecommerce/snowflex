@@ -25,7 +25,6 @@ defmodule Snowflex.Transport.Http do
   * `:max_retries` - Maximum retry attempts for rate limits (default: 3)
   * `:retry_base_delay` - Base delay for exponential backoff in milliseconds (default: 1000)
   * `:retry_max_delay` - Maximum delay between retries in milliseconds (default: 8000)
-  * `:max_partition_concurrency` - Maximum concurrent partition fetches (default: 5)
 
   ## Account Name Handling
 
@@ -64,8 +63,7 @@ defmodule Snowflex.Transport.Http do
     # Retry configuration
     max_retries: 3,
     retry_base_delay: :timer.seconds(1),
-    retry_max_delay: :timer.seconds(8),
-    max_partition_concurrency: 5
+    retry_max_delay: :timer.seconds(8)
   ```
   """
   @behaviour Snowflex.Transport
@@ -103,8 +101,7 @@ defmodule Snowflex.Transport.Http do
       :async_poll_interval,
       :max_retries,
       :retry_base_delay,
-      :retry_max_delay,
-      :max_partition_concurrency
+      :retry_max_delay
     ]
 
     @type t :: %__MODULE__{
@@ -125,8 +122,7 @@ defmodule Snowflex.Transport.Http do
             async_poll_interval: non_neg_integer(),
             max_retries: non_neg_integer(),
             retry_base_delay: non_neg_integer(),
-            retry_max_delay: non_neg_integer(),
-            max_partition_concurrency: non_neg_integer()
+            retry_max_delay: non_neg_integer()
           }
   end
 
@@ -310,9 +306,7 @@ defmodule Snowflex.Transport.Http do
     partition_count = length(partition_info)
     rest_partitions = Enum.to_list(1..(partition_count - 1)//1)
 
-    # Reduce concurrency to avoid thundering herd on rate limits
-    base_concurrency = System.schedulers_online()
-    max_concurrency = min(base_concurrency, state.max_partition_concurrency)
+    max_concurrency = System.schedulers_online()
 
     # Extended timeout to account for Req retries
     extended_timeout = opts[:timeout] + :timer.seconds(30)
@@ -393,8 +387,7 @@ defmodule Snowflex.Transport.Http do
        async_poll_interval: Keyword.get(validated_opts, :async_poll_interval, 1000),
        max_retries: Keyword.get(validated_opts, :max_retries, 3),
        retry_base_delay: Keyword.get(validated_opts, :retry_base_delay, 1000),
-       retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000),
-       max_partition_concurrency: Keyword.get(validated_opts, :max_partition_concurrency, 5)
+       retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000)
      }}
   end
 
