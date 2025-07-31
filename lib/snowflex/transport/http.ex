@@ -310,6 +310,7 @@ defmodule Snowflex.Transport.Http do
 
     max_concurrency = System.schedulers_online()
 
+
     # Extended timeout to account for Req retries
     extended_timeout = opts[:timeout] + :timer.seconds(30)
 
