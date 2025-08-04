@@ -27,3 +27,5 @@ snowflex-*.tar
 
 # Misc.
 /config/*.secret.exs
+
+priv/plts

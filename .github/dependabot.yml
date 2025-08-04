@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: "mix"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "pepsico-ecommerce/snowflex-maintainers"
+    labels:
+      - "dependencies"
+      - "automerge" 

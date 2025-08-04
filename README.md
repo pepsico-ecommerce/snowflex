@@ -1,5 +1,3 @@
-**THIS IS A WORK IN PROGRESS. USE AT YOUR OWN RISK.**
-
 # Snowflex ❄💪
 
 [![Module Version](https://img.shields.io/hexpm/v/snowflex.svg)](https://hex.pm/packages/snowflex)
@@ -8,193 +6,193 @@
 [![License](https://img.shields.io/hexpm/l/snowflex.svg)](https://github.com/pepsico-ecommerce/snowflex/blob/master/LICENSE)
 [![Last Updated](https://img.shields.io/github/last-commit/pepsico-ecommerce/snowflex.svg)](https://github.com/pepsico-ecommerce/snowflex/commits/master)
 
-This application encapsulates an ODBC connection pool for connecting to the Snowflake data warehouse.
+- [Requirements](#requirements)
+- [Configuration](#configuration)
+- [Query Tagging](#query-tagging)
+- [Type Support](#type-support)
+- [Limitations/Considerations](#limitationsconsiderations)
+- [Migration from ODBC](#migration-from-odbc)
+- [Testing in your project](#testing-in-your-project)
 
-## Setup
+---
 
-The following config options can be set:
+> [!NOTE]
+>
+> This README is for the unreleased main branch, please reference the [official documentation on
+> hexdocs][hexdoc] for the latest stable release.
+
+[hexdoc]: https://hexdocs.pm/snowflex/readme.html
+
+<!-- MDOC -->
+
+This adapter implements the following Ecto behaviours:
+
+- `Ecto.Adapter` - Core adapter functionality
+- `Ecto.Adapter.Queryable` - Query execution and streaming
+- `Ecto.Adapter.Schema` - Schema operations (insert, update, delete)
+
+## Requirements
+
+If using the provided `Snowflex.Transport.Http` transport, the only currently supported authentication method is keypair.
+
+In order to obtain the `public_key_fingerprint`, please follow [Snowflake's instructions](https://docs.snowflake.com/en/user-guide/key-pair-auth#verify-the-user-s-public-key-fingerprint).
+
+## Configuration
+
+Configure the adapter in your application:
+
+The adapter supports configurable transport implementations through the `:transport` option.
+By default, it uses `Snowflex.Transport.Http` for REST API communication with Snowflake.
 
 ```elixir
-config :snowflex,
-  driver: "/path/to/my/ODBC/driver" # defaults to "/usr/lib/snowflake/odbc/lib/libSnowflake.so"
+config :my_app, MyApp.Repo,
+  adapter: Snowflex,
+  transport: Snowflex.Transport.Http,  # Optional, defaults to Http
+  # Additional options passed to the transport
+  account_name: "your-account",
+  username: "your_username",
+  private_key_path: "path/to/key.pem",
+  public_key_fingerprint: "your_fingerprint"
 ```
 
-Connection pools are not automatically started for you. You will need to define and establish each connection pool in your application module. Configuration values related to connection timeouts and the mapping of `:null` query values can be set here.
+You may supply other transports that conform to the `Snowflex.Transport` behaviour.
 
-First, create a module to hold your connection information:
+For additional configuration options of the provided `Snowflex.Transport.Http` transport, see it's documentation.
+
+## Query Tagging
+
+All queries can be tagged for better observability and tracking in Snowflake.
+Tags are passed as options to any Repo function call:
 
 ```elixir
-defmodule MyApp.SnowflakeConnection do
-  use Snowflex.Connection,
-    otp_app: :my_app,
-    timeout: :timer.minutes(20),
-    map_nulls_to_nil?: true
-end
+# Tag a query with a UUID
+MyRepo.all(query, query_tag: Ecto.UUID.generate())
+
+# Tag a query with a custom identifier
+iex> MyRepo.insert(changeset, query_tag: "user_registration_abc")
 ```
 
-Define your configuration:
+Query tags are visible in Snowflake's query history and can be used for:
+
+- Tracking query origins
+- Monitoring specific operations
+- Debugging performance issues
+- Auditing database access
+
+## Type Support
+
+The adapter supports the following type conversions:
+
+### From Snowflake to Ecto
+
+- `:integer` - Integer values
+- `:decimal` - Decimal values
+- `:float` - Float values
+- `:date` - Date values
+- `:time` - Time values
+- `:utc_datetime` - UTC datetime values
+- `:naive_datetime` - Naive datetime values
+- `:binary` - Binary data (as hex strings)
+- `:map` - JSON/VARIANT data
+
+### From Ecto to Snowflake
+
+- `:binary` - Binary data (as hex strings)
+- `:decimal` - Decimal values
+- `:float` - Float values
+- `:date` - Date values
+- `:time` - Time values
+- `:utc_datetime` - UTC datetime values
+- `:naive_datetime` - Naive datetime values
+- `:map` - JSON/VARIANT data
+
+## Limitations/Considerations
+
+### Transactions
+
+Snowflex does not support multi-statement transactions. The reason for this is the [Snowflake SQL API](https://docs.snowflake.com/en/developer-guide/sql-api/submitting-multiple-statements) does not support multi-request transactions. That is to say, all statements in a transaction _must_ be sent in the same request. Because it is a common pattern to rely on the results of a previous statement in further downstream queries in the same transaction (e.g. `Ecto.Multi`), this limitation in the SQL API meant that we either needed to provide a potentially unintuitive use case, or just not support them at all.
+
+### Streaming
+
+When streaming rows using `Snowflex.Transport.Http`, keep in mind that [Snowflake dictates the number of partitions returned](https://docs.snowflake.com/en/developer-guide/sql-api/handling-responses#retrieving-additional-partitions). This is different than a normal TCP protocol like `Postgrex`, where the stream will be iterating on one row at a time.
+
+Internally we utilize the same `Stream` modules as other implementations, but because each traunch of results is being determined externally to your app, that memory usage will be higher than if we were bringing back one row at a time.
+
+### Migrations
+
+Migrations are not currently supported by Snowflex.
+
+## Migration from ODBC
+
+Previous versions of Snowflex relied on Erlang `:odbc`. While very stable and battle tested, has always suffered from the idiosyncrasies inherent in ODBC, as well as limitations on the Snowflake side.
+
+This V1.0 implementation removes support for ODBC, and instead relies solely on Snowflake's SQL API.
+
+If you want to progressively migrate to the Ecto implementation, these tips might be helpful:
+
+- Remove all `Snowflex.*_param()` wrapped functions.
+- In your Snowflake Repo, add a declaration similar to the following:
 
 ```elixir
-import Config
+defmodule MyApp.Snowflake do
+  use Ecto.Repo, otp_app: :my_app, adapter: Snowflex
 
-# ...
-
-config :my_app, MyApp.SnowflakeConnection,
-  connection: [
-      role: "PROD",
-      warehouse: System.get_env("SNOWFLAKE_POS_WH"),
-      uid: System.get_env("SNOWFLAKE_POS_UID"),
-      pwd: System.get_env("SNOWFLAKE_POS_PWD")
-    ]
-
- # you may define multiple connection modules
- config :my_app, MyApp.MyOtherSnowflakeConnection,
-    worker: MyApp.MockWorker # defaults to Snowflex.Worker (change for testing/development)
-    connection: [
-      role: "PROD",
-      warehouse: System.get_env("SNOWFLAKE_ADVERTISING_WH"),
-      uid: System.get_env("SNOWFLAKE_ADVERTISING_UID"),
-      pwd: System.get_env("SNOWFLAKE_ADVERTISING_PWD")
-    ]
-```
-
-The odbc driver will, by default, return `:null` for empty values returned from snowflake
-queries. This can be converted to `nil` by passing the `map_nulls_to_nil?: true` option to
-the `use Snowflex.Connection` macro. `:map_nulls_to_nil?` will default to `false` if not set.
-
-Then, in your application module, you would start your connection:
-
-```elixir
-def MyApp.Application do
-  use Application
-
-  def start(_type, _args) do
-
-    children = [
-      MyApp.SnowflakeConnection,
-      MyApp.MyOtherSnowflakeConnection
-    ]
-
-    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-    Supervisor.start_link(children, opts)
+  def sql_query(query) do
+    execute(query)
   end
+
+  def param_query(query, params \\ %{}) do
+    execute(query, params)
+  end
+
+  defp execute(query, params \\ %{}) do
+    query
+    |> query_many!(params) # provided by `Ecto.Repo`
+    |> process_results()
+    |> unwrap_single_result()
+  end
+
+  defp process_results([]), do: []
+
+   defp process_results([%Snowflex.Result{} = result | rest]),
+     do: [unpack_snowflex_result(result) | process_results(rest)]
+   defp process_results([other | rest]), do: [other | process_results(rest)]
+   defp unpack_snowflex_result(%{columns: nil, num_rows: num_rows}), do: {:updated, num_rows}
+   defp unpack_snowflex_result(%{columns: columns, rows: rows})
+        when is_list(columns) and is_list(rows) do
+     headers = Enum.map(columns, &(to_string(&1) |> String.downcase()))
+     rows
+     |> Enum.map(fn row ->
+       Enum.zip(headers, row) |> Map.new()
+     end)
+   end
+   # If there's just one result, unwrap it
+   defp unwrap_single_result([result]), do: result
+   defp unwrap_single_result(results), do: results
 end
 ```
 
-## Caveats
+Any references to Snowflex for `sql_query` and `param_query` can then be replaced with `MyApp.Snowflake`.
 
-If you are planning to connect to the Snowflake warehouse, your local Erlang instance
-must have ODBC enabled. The erlang installed by Homebrew does NOT have ODBC support. The `asdf`
-version of erlang does have ODBC support. You will also need the Snowflake ODBC driver installed
-on your machine. You can download this from https://sfc-repo.snowflakecomputing.com/odbc/index.html.
+To replace the previous functionality of `cast_results`, we would recommend that you leverage a schemaless changeset.
 
-### Apple Silicon
+## Testing in your Project
 
-Snowflake has a native `macaarch64 driver` available from https://sfc-repo.snowflakecomputing.com/odbc/macaarch64/index.html. However Erlang is unable to find the `unixodbc` files by default after Homebrew [changed their installation directory](https://github.com/Homebrew/brew/issues/9177) from `/usr/local` to `/opt/homebrew`.
+When running tests locally, it can often be helpful to avoid hitting Snowflake to avoid unnecessary compute/storage costs.
 
-We can build Erlang with `asdf` and ensure the correct files included to make sure `odbc.app` is available when running Elixir.
+See `Snowflex.MigrationGenerator` for a strategy to use a local DB implementation when running unit tests, while still using Snowflake in dev/prod environments.
 
-We will need [asdf](https://asdf-vm.com) and [Homebrew](https://brew.sh) installed.
+<!-- MDOC -->
 
-Next, we should first remove any previous installations or builds of Elixir or Erlang to make sure they are not incorrectly targeted by `mix` when we run our applicatoin. This can be done like so:
+## Contributing
 
-``` sh
-brew uninstall elixir
-brew uninstall erlang
-asdf uninstall erlang
-rm ~/.asdf/plugins/erlang/kerl-home/otp_builds
-rm ~/.asdf/plugins/erlang/kerl-home/otp_installations
-```
+We provide a set of modules tagged as `:integration`.
 
-We can now get the neccesary ODBC and OpenSSL files from Brew, set their correct locations in the environment, and build Erlang and Elixir with `asdf` like so:
+If you'd like to run the integration tests, you will need to provide `Http` with appropriate configuration in order to connect.
 
-``` sh
-brew install unixodbc
-brew install openssl@1.1
-export KERL_CONFIGURE_OPTIONS="--with-odbc=$(brew --prefix unixodbc) --with-ssl=$(brew --prefix openssl@1.1)"
-export CC="/usr/bin/gcc -I$(brew --prefix unixodbc)/include"
-export LDFLAGS="-L$(brew --prefix unixodbc)/lib"
-asdf install erlang
-asdf install elixir
-unset KERL_CONFIGURE_OPTIONS
-unset CC
-unset LDFLAGS
-```
+See `test/support/schemas` for example schemas that you will need to make sure are available in your Snowflake environment.
 
-You will then need to change the following on `/opt/snowflake/snowflakeodbc/lib/simba.snowflake.ini`:
-
-- Change the `CABundleFile` config value to the place the `cacert.pem` file is in your ODBC driver installation (for version 2.25.8 it is in `/opt/snowflake/snowflakeodbc/lib/cacert.pem`). Sometimes it points to an invalid path, which would result in the error "OOB curl_easy_perform() failed: Problem with the SSL CA cert (path? access rights?)" when connecting to snowflake.
-- Comment all lines starting with ODBCInstLib
-- Add the line `ODBCInstLib=/opt/homebrew/Cellar/unixodbc/2.3.11/lib/libodbcinst.dylib` at the bottom
-
-And finally ensure that your elixir config has the correct driver location
-
-``` elixir
-config :snowflex, driver: "/opt/snowflake/snowflakeodbc/lib/libSnowflake.dylib"
-```
-
-## Installation
-
-The package can be installed by adding `:snowflex` to your list of dependencies in `mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:snowflex, "~> 0.5.1"}
-  ]
-end
-```
-
-## DBConnection Support
-
-[DBConnection](https://github.com/elixir-ecto/db_connection) support is currently in experimental phase, setting it up is very similar to current implementation with the expection of configuration options and obtaining the same results will require an extra step:
-
-### Configuration:
-
-Setting a Module to hold the connection is very similar, but instead you'll use `Snowflex.DBConnection`:
-
-Example:
-
-```elixir
-defmodule MyApp.SnowflakeConnection do
-  use Snowflex.DBConnection,
-    otp_app: :my_app,
-    timeout: :timer.minutes(5)
-end
-```
-
-```elixir
-config :my_app, MyApp.SnowflakeConnection,
-  pool_size: 5, # the connection pool size
-  worker: MyApp.CustomWorker, # defaults to Snowflex.DBConnection.Server
-  connection: [
-      role: "PROD",
-      warehouse: System.get_env("SNOWFLAKE_POS_WH"),
-      uid: System.get_env("SNOWFLAKE_POS_UID"),
-      pwd: System.get_env("SNOWFLAKE_POS_PWD")
-    ]
-```
-
-### Usage:
-
-After setup, you can use your connection to query:
-
-```elixir
-alias Snowflex.DBConnection.Result
-
-{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query")
-{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query", ["my params"])
-```
-
-As you can see we now receive an `{:ok, result}` tuple, to get results as expected with current implementation, we need to call `process_result/1`:
-
-```elixir
-alias Snowflex.DBConnection.Result
-
-{:ok, %Result{} = result} = MyApp.SnowflakeConnection.execute("my query")
-
-[%{"col" => 1}, %{"col" => 2}] = SnowflakeDBConnection.process_result(result)
-```
+To ensure a commit passes CI, please run `mix check`.
 
 ## Copyright and License
 
