@@ -1,3 +1,5 @@
+# We can't know these module names ahead of time.
+# credo:disable-for-this-file Credo.Check.Warning.UnsafeToAtom
 defmodule Snowflex.MigrationGenerator do
   @moduledoc """
   Provides functionality to automatically generate and run migrations based on Ecto schemas or raw table definitions.
@@ -132,7 +134,7 @@ defmodule Snowflex.MigrationGenerator do
       |> Enum.with_index()
       |> Enum.each(fn
         {{module, {source, fields, primary_key}}, index} ->
-          defmodule Module.safe_concat(module, Migration) do
+          defmodule Module.concat(module, Migration) do
             use Migration
 
             @primary_key primary_key
@@ -155,13 +157,13 @@ defmodule Snowflex.MigrationGenerator do
           Migrator.up(
             repo,
             index,
-            Module.safe_concat(module, Migration),
+            Module.concat(module, Migration),
             log: :info,
             skip_table_creation: false
           )
 
         {module, index} ->
-          defmodule Module.safe_concat(module, Migration) do
+          defmodule Module.concat(module, Migration) do
             use Migration
 
             @module module
@@ -186,7 +188,7 @@ defmodule Snowflex.MigrationGenerator do
           Migrator.up(
             repo,
             index,
-            Module.safe_concat(module, Migration),
+            Module.concat(module, Migration),
             log: :info,
             skip_table_creation: false
           )
