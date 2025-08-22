@@ -25,6 +25,7 @@ defmodule Snowflex.Transport.Http do
   * `:max_retries` - Maximum retry attempts for rate limits (default: 3)
   * `:retry_base_delay` - Base delay for exponential backoff in milliseconds (default: 1000)
   * `:retry_max_delay` - Maximum delay between retries in milliseconds (default: 8000)
+  * `:connect_options` - Connection options for `Req`, see `Req.new/1` for more details.
 
   ## Account Name Handling
 
@@ -101,7 +102,8 @@ defmodule Snowflex.Transport.Http do
       :async_poll_interval,
       :max_retries,
       :retry_base_delay,
-      :retry_max_delay
+      :retry_max_delay,
+      :connect_options
     ]
 
     @type t :: %__MODULE__{
@@ -122,7 +124,8 @@ defmodule Snowflex.Transport.Http do
             async_poll_interval: non_neg_integer(),
             max_retries: non_neg_integer(),
             retry_base_delay: non_neg_integer(),
-            retry_max_delay: non_neg_integer()
+            retry_max_delay: non_neg_integer(),
+            connect_options: Keyword.t()
           }
   end
 
@@ -382,7 +385,8 @@ defmodule Snowflex.Transport.Http do
        async_poll_interval: Keyword.get(validated_opts, :async_poll_interval, 1000),
        max_retries: Keyword.get(validated_opts, :max_retries, 3),
        retry_base_delay: Keyword.get(validated_opts, :retry_base_delay, 1000),
-       retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000)
+       retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000),
+       connect_options: Keyword.get(validated_opts, :connect_options, [])
      }}
   end
 
@@ -470,7 +474,8 @@ defmodule Snowflex.Transport.Http do
       retry_delay: fn attempt ->
         calculate_backoff_delay(attempt, state.retry_base_delay, state.retry_max_delay)
       end,
-      max_retries: state.max_retries
+      max_retries: state.max_retries,
+      connect_options: state.connect_options
     )
   end
 
