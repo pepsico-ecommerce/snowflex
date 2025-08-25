@@ -137,7 +137,16 @@ defmodule Snowflex.Transport.Http do
   @impl Snowflex.Transport
   def execute_statement(pid, statement, params, opts) do
     opts = add_default_timeout(opts)
-    GenServer.call(pid, {:execute, statement, params, opts}, opts[:timeout])
+
+    try do
+      GenServer.call(pid, {:execute, statement, params, opts}, opts[:timeout])
+    catch
+      :exit, {:timeout, _} ->
+        {:error, Error.exception("#{statement} timed out after #{inspect(opts[:timeout])}")}
+
+      :exit, reason ->
+        {:error, Error.exception("#{statement} failed due to #{inspect(reason)}")}
+    end
   end
 
   @impl Snowflex.Transport
