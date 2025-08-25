@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-08-25
+
+### Bug Fixes
+
+- Fix migration generator depending on `safe_concat` for building module names (#101)
+
+### Enhancements
+
+- Accept req `:connect_options` config (#104)
+
 ## [1.0] - 2025-04-24
 
 This release is a ground up rewrite of the library.
