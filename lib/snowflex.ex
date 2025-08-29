@@ -79,6 +79,7 @@ defmodule Snowflex do
 
   defp float_decode(nil), do: {:ok, nil}
   defp float_decode(float) when is_float(float), do: float
+  defp float_decode(%Decimal{} = decimal), do: {:ok, Decimal.to_float(decimal)}
 
   defp float_decode(float) do
     {val, _} = Float.parse(float)
