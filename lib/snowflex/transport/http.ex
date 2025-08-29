@@ -476,7 +476,7 @@ defmodule Snowflex.Transport.Http do
         {"Authorization", "Bearer #{generate_token(state)}"},
         {"Content-Type", "application/json"},
         {"Accept", "application/json"},
-        {"User-Agent", "snowflex/1.0.2"},
+        {"User-Agent", "snowflex/1.0.3"},
         {"X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT"}
       ],
       retry: :safe_transient,
