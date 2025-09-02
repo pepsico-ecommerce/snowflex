@@ -557,7 +557,7 @@ defmodule Snowflex.Ecto.Adapter.ConnectionTest do
     query =
       TestSchema |> select([r], fragment("? COLLATE ?", r.x, identifier(^"es_ES"))) |> plan()
 
-    assert all(query) == ~s{SELECT s0.x COLLATE identifier('es_ES') FROM schema AS s0}
+    assert all(query) == ~s{SELECT s0.x COLLATE es_ES FROM schema AS s0}
 
     value = 13
     query = TestSchema |> select([r], fragment("lcase(?, ?)", r.x, ^value)) |> plan()

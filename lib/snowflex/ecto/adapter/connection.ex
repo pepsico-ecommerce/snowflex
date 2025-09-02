@@ -733,7 +733,7 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     |> parens_for_select()
   end
 
-  defp expr({:literal, _, [literal]}, _sources, _query) do
+  defp expr({:identifier, _, [literal]}, _sources, _query) do
     quote_name(literal)
   end
 
