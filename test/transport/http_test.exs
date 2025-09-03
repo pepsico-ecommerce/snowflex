@@ -7,7 +7,7 @@ defmodule Snowflex.Transport.HttpTest do
   defmodule DummyHttp do
     use GenServer
 
-    @impl GenServer
+    @spec start_link(any()) :: GenServer.on_start()
     def start_link(_) do
       GenServer.start_link(__MODULE__, %{})
     end

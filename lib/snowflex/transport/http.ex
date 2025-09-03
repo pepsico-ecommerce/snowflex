@@ -476,7 +476,7 @@ defmodule Snowflex.Transport.Http do
         {"Authorization", "Bearer #{generate_token(state)}"},
         {"Content-Type", "application/json"},
         {"Accept", "application/json"},
-        {"User-Agent", "snowflex/1.0.3"},
+        {"User-Agent", "snowflex/#{snowflex_version()}"},
         {"X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT"}
       ],
       retry: :safe_transient,
@@ -486,6 +486,10 @@ defmodule Snowflex.Transport.Http do
       max_retries: state.max_retries,
       connect_options: state.connect_options
     )
+  end
+
+  defp snowflex_version do
+    Application.spec(:snowflex)[:vsn]
   end
 
   defp calculate_backoff_delay(attempt, base_delay, max_delay) do
