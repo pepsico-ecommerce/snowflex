@@ -87,6 +87,7 @@ defmodule Snowflex do
   end
 
   defp date_decode(nil), do: {:ok, nil}
+  defp date_decode(%Date{} = date), do: {:ok, date}
   defp date_decode(date), do: Date.from_iso8601(date)
 
   ## Query
