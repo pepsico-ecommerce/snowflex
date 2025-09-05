@@ -76,17 +76,32 @@ config :my_app, MyApp.Repo,
 ```elixir
 config :my_app, MyApp.Repo,
   # ... other options ...
-  private_key_from_string: """
+  private_key_from_string: System.get_env("SNOWFLAKE_PRIVATE_KEY") || """
   -----BEGIN PRIVATE KEY-----
   MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...
   -----END PRIVATE KEY-----
   """
 ```
 
+### 3. Environment Variable (recommended for production)
+```elixir
+config :my_app, MyApp.Repo,
+  # ... other options ...
+  private_key_from_string: System.get_env("SNOWFLAKE_PRIVATE_KEY")
+```
+
+Set the environment variable:
+```bash
+export SNOWFLAKE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...
+-----END PRIVATE KEY-----"
+```
+
 **Important notes:**
 - You must provide either `private_key_path` OR `private_key_from_string`, not both
 - Both options accept PEM format private keys  
 - The string method is useful when deploying to environments where file system access is restricted or when storing keys in environment variables/secrets management systems
+- Using environment variables is recommended for production deployments for better security
 
 ## Query Tagging
 
