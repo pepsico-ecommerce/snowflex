@@ -51,13 +51,42 @@ config :my_app, MyApp.Repo,
   # Additional options passed to the transport
   account_name: "your-account",
   username: "your_username",
-  private_key_path: "path/to/key.pem",
+  private_key_path: "path/to/key.pem",  # Path to private key file
+  # OR alternatively, provide the private key as a string:
+  # private_key_from_string: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
   public_key_fingerprint: "your_fingerprint"
 ```
 
 You may supply other transports that conform to the `Snowflex.Transport` behaviour.
 
 For additional configuration options of the provided `Snowflex.Transport.Http` transport, see it's documentation.
+
+## Private Key Configuration
+
+Snowflex supports two ways to provide your private key for authentication:
+
+### 1. File Path (traditional method)
+```elixir
+config :my_app, MyApp.Repo,
+  # ... other options ...
+  private_key_path: "/path/to/your/private_key.pem"
+```
+
+### 2. String (new method)
+```elixir
+config :my_app, MyApp.Repo,
+  # ... other options ...
+  private_key_from_string: """
+  -----BEGIN PRIVATE KEY-----
+  MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...
+  -----END PRIVATE KEY-----
+  """
+```
+
+**Important notes:**
+- You must provide either `private_key_path` OR `private_key_from_string`, not both
+- Both options accept PEM format private keys  
+- The string method is useful when deploying to environments where file system access is restricted or when storing keys in environment variables/secrets management systems
 
 ## Query Tagging
 
