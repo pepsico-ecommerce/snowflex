@@ -117,7 +117,7 @@ Snowflex does not support multi-statement transactions. The reason for this is t
 
 ### Multiple Statements
 
-Snowflex supports submitting multiple statements in the same query and will return the results of each statement packed into an array.  
+Snowflex supports submitting multiple statements in the same query and will return the results of each statement packed into an array.
 
 This can be useful when statements you want to execute need to occur inside of the same transaction (e.g. you need to leverage a temporary table)
 This is possible using both the `query` and `query_many` functions.
