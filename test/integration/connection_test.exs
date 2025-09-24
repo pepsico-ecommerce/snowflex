@@ -297,5 +297,100 @@ defmodule Snowflex.ConnectionTest do
       assert is_list(result)
       assert length(result) <= 10
     end
+
+    test "can return results from multiple statements" do
+      query_1 =
+        from(a in AllTestTypes,
+          select:
+            {a.col_date, a.col_time, a.col_timestamp_ltz, a.col_timestamp_ntz, a.col_timestamp_tz},
+          limit: 1
+        )
+
+      {sql_1, _params} = Http.to_sql(:all, query_1)
+
+      query_2 =
+        from(u in User, select: u.id, limit: 10)
+
+      {sql_2, _params} = Http.to_sql(:all, query_2)
+
+      assert {:ok, [results_1, results_2]} =
+               Http.query("#{sql_1}; #{sql_2};")
+
+      assert %Snowflex.Result{
+               columns: [
+                 "COL_DATE",
+                 "COL_TIME",
+                 "COL_TIMESTAMP_LTZ",
+                 "COL_TIMESTAMP_NTZ",
+                 "COL_TIMESTAMP_TZ"
+               ],
+               rows: [
+                 [
+                   ~D[2025-02-27],
+                   nil,
+                   nil,
+                   ~N[2025-02-27 14:20:01.967000],
+                   ~U[2025-02-27 22:20:01.967000Z]
+                 ]
+               ]
+             } = results_1
+
+      assert %Snowflex.Result{
+               columns: ["ID"],
+               rows: [[1], [2], [3], [4], [5], [6], ~c"\a", ~c"\b", ~c"\t", ~c"\n"]
+             } = results_2
+    end
+
+    @tag :long_running_test
+    @tag timeout: :timer.seconds(120)
+    test "supports multiple statement queries longer than 45 seconds" do
+      query_1 =
+        from(a in AllTestTypes,
+          select:
+            {a.col_date, a.col_time, a.col_timestamp_ltz, a.col_timestamp_ntz, a.col_timestamp_tz},
+          limit: 1
+        )
+
+      {sql_1, _params} = Http.to_sql(:all, query_1)
+
+      query_2 =
+        from(u in User, select: u.id, limit: 10)
+
+      {sql_2, _params} = Http.to_sql(:all, query_2)
+
+      assert {:ok, [results_1, results_wait, results_2]} =
+               Http.query("#{sql_1}; CALL SYSTEM$WAIT(60); #{sql_2};", [],
+                 timeout: :timer.seconds(180)
+               )
+
+      assert %Snowflex.Result{
+               columns: [
+                 "COL_DATE",
+                 "COL_TIME",
+                 "COL_TIMESTAMP_LTZ",
+                 "COL_TIMESTAMP_NTZ",
+                 "COL_TIMESTAMP_TZ"
+               ],
+               rows: [
+                 [
+                   ~D[2025-02-27],
+                   nil,
+                   nil,
+                   ~N[2025-02-27 14:20:01.967000],
+                   ~U[2025-02-27 22:20:01.967000Z]
+                 ]
+               ]
+             } = results_1
+
+      assert %Snowflex.Result{
+               columns: ["SYSTEM$WAIT"],
+               rows: [["waited 60 seconds"]]
+             } = results_wait
+
+      assert %Snowflex.Result{
+               columns: ["ID"],
+               rows: [[1], [2], [3], [4], [5], [6], ~c"\a", ~c"\b", ~c"\t", ~c"\n"]
+             } = results_2
+    end
   end
 end

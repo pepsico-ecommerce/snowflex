@@ -302,6 +302,36 @@ defmodule Snowflex.Transport.Http do
 
   defp await_async_execution(_state, _status, body), do: {:ok, body}
 
+  defp gather_results(state, %{"statementHandles" => statement_handles}, opts) do
+    max_concurrency = System.schedulers_online()
+    extended_timeout = opts[:timeout] + :timer.seconds(30)
+
+    Task.Supervisor.async_stream_nolink(
+      Snowflex.TaskSupervisor,
+      statement_handles,
+      fn handle ->
+        case await_async_execution(state, 202, %{"statementHandle" => handle}) do
+          {:ok, body} -> gather_results(state, body, opts)
+          {:error, error} -> {:error, error}
+        end
+      end,
+      max_concurrency: max_concurrency,
+      ordered: true,
+      timeout: extended_timeout,
+      on_timeout: :kill_task
+    )
+    |> Enum.reduce_while({:ok, []}, fn
+      {:ok, {:ok, result_body}}, {:ok, acc} ->
+        {:cont, {:ok, acc ++ [{:ok, result_body}]}}
+
+      {:ok, {:error, error}}, _acc ->
+        {:halt, {:error, error}}
+
+      {:exit, reason}, _acc ->
+        {:halt, {:error, %Error{message: "Task failed: #{inspect(reason)}"}}}
+    end)
+  end
+
   defp gather_results(
          state,
          %{
@@ -534,6 +564,10 @@ defmodule Snowflex.Transport.Http do
     capped_delay = min(exponential_delay, max_delay)
     jitter = :rand.uniform() * 0.1 * capped_delay
     trunc(capped_delay + jitter)
+  end
+
+  defp format_response_body(body) when is_list(body) do
+    Enum.map(body, fn {:ok, statement_body} -> format_response_body(statement_body) end)
   end
 
   defp format_response_body(body) do
