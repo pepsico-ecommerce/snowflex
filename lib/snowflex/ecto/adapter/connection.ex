@@ -25,8 +25,16 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     conn
     |> DBConnection.execute(query, params, opts)
     |> then(fn
-      {:ok, _query, result} -> {:ok, result}
-      any -> any
+      {:ok, query, results} when is_list(results) ->
+        # DBConnection.execute automatically decodes if there is an implementation of the protocol,
+        # but since we have a list, we need to decode each result individually
+        {:ok, Enum.map(results, fn result -> DBConnection.Query.decode(query, result, opts) end)}
+
+      {:ok, _query, result} ->
+        {:ok, result}
+
+      any ->
+        any
     end)
   end
 

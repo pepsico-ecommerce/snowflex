@@ -72,9 +72,14 @@ EMnIHAkhdTGryeUSwyvEaZ/6
       public_key_fingerprint: "test_fingerprint"
     ]
 
-    test "accepts private_key_path option" do
+    setup do
+      tmp_dir = ExUnit.tmp_dir()
+      {:ok, tmp_dir: tmp_dir}
+    end
+
+    test "accepts private_key_path option", %{tmp_dir: tmp_dir} do
       # Create a temporary file with test private key
-      temp_path = System.tmp_dir!() <> "/test_key.pem"
+      temp_path = Path.join(tmp_dir, "test_key.pem")
       File.write!(temp_path, @test_private_key)
 
       opts = @base_opts ++ [private_key_path: temp_path]
@@ -82,10 +87,8 @@ EMnIHAkhdTGryeUSwyvEaZ/6
       # This will fail during connection check, but validation should pass
       # The error should be related to connection, not validation
       assert {:error, %Error{message: message}} = Http.start_link(opts)
-      refute message =~ "Missing required option"
-      refute message =~ "Either :private_key_path or :private_key must be provided"
-
-      File.rm(temp_path)
+      assert not String.contains?(message, "Missing required option")
+      assert not String.contains?(message, "Either :private_key_path or :private_key_from_string must be provided")
     end
 
     test "accepts private_key_from_string option" do
@@ -94,20 +97,18 @@ EMnIHAkhdTGryeUSwyvEaZ/6
       # This will fail during connection check, but validation should pass
       # The error should be related to connection, not validation
       assert {:error, %Error{message: message}} = Http.start_link(opts)
-      refute message =~ "Missing required option"
-      refute message =~ "Either :private_key_path or :private_key_from_string must be provided"
+      assert not String.contains?(message, "Missing required option")
+      assert not String.contains?(message, "Either :private_key_path or :private_key_from_string must be provided")
     end
 
-    test "rejects when both private_key_path and private_key_from_string are provided" do
-      temp_path = System.tmp_dir!() <> "/test_key.pem"
+    test "rejects when both private_key_path and private_key_from_string are provided", %{tmp_dir: tmp_dir} do
+      temp_path = Path.join(tmp_dir, "test_key.pem")
       File.write!(temp_path, @test_private_key)
 
       opts = @base_opts ++ [private_key_path: temp_path, private_key_from_string: @test_private_key]
 
       assert {:error, %Error{message: "Both :private_key_path and :private_key_from_string provided. Use only one."}} =
                Http.start_link(opts)
-
-      File.rm(temp_path)
     end
 
     test "rejects when neither private_key_path nor private_key_from_string are provided" do

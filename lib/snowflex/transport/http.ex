@@ -46,6 +46,33 @@ defmodule Snowflex.Transport.Http do
   The transport uses JWT authentication with RSA key pairs. The private key must be in PEM format
   and the public key fingerprint must be registered with Snowflake.
 
+  ## Private Key Configuration
+
+  Snowflex supports two ways to provide your private key for authentication:
+
+  ### 1. File Path (traditional method)
+  ```elixir
+  config :my_app, MyApp.Repo,
+    # ... other options ...
+    private_key_path: "/path/to/your/private_key.pem"
+  ```
+
+  ### 2. String (inline method)
+  ```elixir
+  config :my_app, MyApp.Repo,
+    # ... other options ...
+    private_key_from_string: System.get_env("SNOWFLAKE_PRIVATE_KEY") || \"\"\"
+    -----BEGIN PRIVATE KEY-----
+    MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...
+    -----END PRIVATE KEY-----
+    \"\"\"
+  ```
+
+  **Important notes:**
+  - You must provide either `private_key_path` OR `private_key_from_string`, not both
+  - Both options accept PEM format private keys
+  - The string method is useful when deploying to environments where file system access is restricted or when storing keys in environment variables/secrets management systems
+
   ## Example Configuration
 
   ```elixir
@@ -191,8 +218,7 @@ defmodule Snowflex.Transport.Http do
 
   @impl GenServer
   def init(opts) do
-    with {:ok, validated_opts} <- validate_opts(opts),
-         {:ok, private_key} <- read_private_key(validated_opts),
+    with {:ok, validated_opts, private_key} <- validate_and_read_private_key(opts),
          {:ok, state} <- init_state(validated_opts, private_key) do
       check_connection(state)
     end
@@ -302,6 +328,36 @@ defmodule Snowflex.Transport.Http do
 
   defp await_async_execution(_state, _status, body), do: {:ok, body}
 
+  defp gather_results(state, %{"statementHandles" => statement_handles}, opts) do
+    max_concurrency = System.schedulers_online()
+    extended_timeout = opts[:timeout] + :timer.seconds(30)
+
+    Task.Supervisor.async_stream_nolink(
+      Snowflex.TaskSupervisor,
+      statement_handles,
+      fn handle ->
+        case await_async_execution(state, 202, %{"statementHandle" => handle}) do
+          {:ok, body} -> gather_results(state, body, opts)
+          {:error, error} -> {:error, error}
+        end
+      end,
+      max_concurrency: max_concurrency,
+      ordered: true,
+      timeout: extended_timeout,
+      on_timeout: :kill_task
+    )
+    |> Enum.reduce_while({:ok, []}, fn
+      {:ok, {:ok, result_body}}, {:ok, acc} ->
+        {:cont, {:ok, acc ++ [{:ok, result_body}]}}
+
+      {:ok, {:error, error}}, _acc ->
+        {:halt, {:error, error}}
+
+      {:exit, reason}, _acc ->
+        {:halt, {:error, %Error{message: "Task failed: #{inspect(reason)}"}}}
+    end)
+  end
+
   defp gather_results(
          state,
          %{
@@ -362,10 +418,10 @@ defmodule Snowflex.Transport.Http do
   end
 
   # Init/Config Helpers
-  defp validate_opts(opts) do
+  defp validate_and_read_private_key(opts) do
     with {:ok, opts} <- validate_required_opts(opts),
-         {:ok, opts} <- validate_private_key_opts(opts) do
-      {:ok, opts}
+         {:ok, opts, private_key} <- validate_and_read_private_key_opts(opts) do
+      {:ok, opts, private_key}
     else
       {:stop, error} -> {:stop, error}
     end
@@ -388,18 +444,27 @@ defmodule Snowflex.Transport.Http do
     )
   end
 
-  defp validate_private_key_opts(opts) do
+  defp validate_and_read_private_key_opts(opts) do
     private_key_path = Keyword.get(opts, :private_key_path)
     private_key_from_string = Keyword.get(opts, :private_key_from_string)
 
-    cond do
-      is_binary(private_key_path) and byte_size(private_key_path) > 0 ->
-        {:ok, opts}
+    case {private_key_path, private_key_from_string} do
+      {path, nil} when is_binary(path) and byte_size(path) > 0 ->
+        case File.read(path) do
+          {:ok, key} ->
+            {:ok, opts, key}
 
-      is_binary(private_key_from_string) and byte_size(private_key_from_string) > 0 ->
-        {:ok, opts}
+          {:error, reason} ->
+            {:stop, %Error{message: "Failed to read private key from path: #{inspect(reason)}"}}
+        end
 
-      true ->
+      {nil, key} when is_binary(key) and byte_size(key) > 0 ->
+        {:ok, opts, key}
+
+      {path, key} when is_binary(path) and is_binary(key) ->
+        {:stop, %Error{message: "Both :private_key_path and :private_key_from_string provided. Use only one."}}
+
+      _any ->
         {:stop, %Error{message: "Either :private_key_path or :private_key_from_string must be provided"}}
     end
   end
@@ -437,24 +502,6 @@ defmodule Snowflex.Transport.Http do
     end
   end
 
-  defp read_private_key(validated_opts) do
-    case {Keyword.get(validated_opts, :private_key_path), Keyword.get(validated_opts, :private_key_from_string)} do
-      {path, nil} when is_binary(path) ->
-        case File.read(path) do
-          {:ok, key} ->
-            {:ok, key}
-
-          {:error, reason} ->
-            {:stop, %Error{message: "Failed to read private key from path: #{inspect(reason)}"}}
-        end
-
-      {nil, key} when is_binary(key) ->
-        {:ok, key}
-
-      {_path, _key} ->
-        {:stop, %Error{message: "Both :private_key_path and :private_key_from_string provided. Use only one."}}
-    end
-  end
 
   # Token helpers
 
@@ -534,6 +581,10 @@ defmodule Snowflex.Transport.Http do
     capped_delay = min(exponential_delay, max_delay)
     jitter = :rand.uniform() * 0.1 * capped_delay
     trunc(capped_delay + jitter)
+  end
+
+  defp format_response_body(body) when is_list(body) do
+    Enum.map(body, fn {:ok, statement_body} -> format_response_body(statement_body) end)
   end
 
   defp format_response_body(body) do

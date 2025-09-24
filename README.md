@@ -61,47 +61,6 @@ You may supply other transports that conform to the `Snowflex.Transport` behavio
 
 For additional configuration options of the provided `Snowflex.Transport.Http` transport, see it's documentation.
 
-## Private Key Configuration
-
-Snowflex supports two ways to provide your private key for authentication:
-
-### 1. File Path (traditional method)
-```elixir
-config :my_app, MyApp.Repo,
-  # ... other options ...
-  private_key_path: "/path/to/your/private_key.pem"
-```
-
-### 2. String (new method)
-```elixir
-config :my_app, MyApp.Repo,
-  # ... other options ...
-  private_key_from_string: System.get_env("SNOWFLAKE_PRIVATE_KEY") || """
-  -----BEGIN PRIVATE KEY-----
-  MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...
-  -----END PRIVATE KEY-----
-  """
-```
-
-### 3. Environment Variable (recommended for production)
-```elixir
-config :my_app, MyApp.Repo,
-  # ... other options ...
-  private_key_from_string: System.get_env("SNOWFLAKE_PRIVATE_KEY")
-```
-
-Set the environment variable:
-```bash
-export SNOWFLAKE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...
------END PRIVATE KEY-----"
-```
-
-**Important notes:**
-- You must provide either `private_key_path` OR `private_key_from_string`, not both
-- Both options accept PEM format private keys  
-- The string method is useful when deploying to environments where file system access is restricted or when storing keys in environment variables/secrets management systems
-- Using environment variables is recommended for production deployments for better security
 
 ## Query Tagging
 
@@ -155,6 +114,24 @@ The adapter supports the following type conversions:
 ### Transactions
 
 Snowflex does not support multi-statement transactions. The reason for this is the [Snowflake SQL API](https://docs.snowflake.com/en/developer-guide/sql-api/submitting-multiple-statements) does not support multi-request transactions. That is to say, all statements in a transaction _must_ be sent in the same request. Because it is a common pattern to rely on the results of a previous statement in further downstream queries in the same transaction (e.g. `Ecto.Multi`), this limitation in the SQL API meant that we either needed to provide a potentially unintuitive use case, or just not support them at all.
+
+### Multiple Statements
+
+Snowflex supports submitting multiple statements in the same query and will return the results of each statement packed into an array.  
+
+This can be useful when statements you want to execute need to occur inside of the same transaction (e.g. you need to leverage a temporary table)
+This is possible using both the `query` and `query_many` functions.
+
+``` elixir
+iex> Repo.query("SELECT 1; SELECT 2;")
+
+{:ok,
+ [
+   %Snowflex.Result{rows: [[1]]},
+   %Snowflex.Result{rows: [[2]]}
+ ]
+}
+```
 
 ### Streaming
 
