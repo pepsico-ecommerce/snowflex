@@ -9,6 +9,7 @@
 - [Requirements](#requirements)
 - [Configuration](#configuration)
 - [Query Tagging](#query-tagging)
+- [Error Logging and Metadata](#error-logging-and-metadata)
 - [Type Support](#type-support)
 - [Limitations/Considerations](#limitationsconsiderations)
 - [Migration from ODBC](#migration-from-odbc)
@@ -78,6 +79,42 @@ Query tags are visible in Snowflake's query history and can be used for:
 - Monitoring specific operations
 - Debugging performance issues
 - Auditing database access
+
+## Error Logging and Metadata
+
+Snowflex automatically enriches error logs with contextual metadata to help with debugging and monitoring. When queries fail, detailed information about the error context is added to Logger metadata.
+
+### Available Metadata Keys
+
+The following metadata keys are set when errors occur:
+
+- `:snowflex_account_name` - Your Snowflake account identifier
+- `:snowflex_username` - The username used for the connection
+- `:snowflex_query_id` - Snowflake's unique query identifier
+- `:snowflex_statement` - The SQL statement that failed
+- `:snowflex_warehouse` - The default warehouse used for the query (if configured)
+- `:snowflex_role` - The default role used for the query (if configured)
+- `:snowflex_database` - The default database used for the query (if configured)
+- `:snowflex_schema` - The default schema used for the query (if configured)
+
+### Configuring Logger
+
+To capture this metadata in your logs, see [Logger's Metadata Section](https://hexdocs.pm/logger/1.12.3/Logger.html#module-metadata) for more information on how to configure Logger.
+
+### Example Error Log
+
+With metadata configured, error logs will include context like:
+
+```
+snowflex_account_name=my_account snowflex_username=my_user snowflex_warehouse=MY_WH snowflex_database=MY_DB snowflex_statement=SELECT * FROM users [error] Snowflake query failed: [529] "Server too busy. Please retry."
+```
+
+This enriched logging makes it easier to:
+
+- Track which account/warehouse/role errors are occurring in
+- Correlate errors with specific SQL statements
+- Debug issues across different Snowflake environments
+- Monitor query failures in production
 
 ## Type Support
 
