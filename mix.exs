@@ -71,6 +71,7 @@ defmodule Snowflex.MixProject do
       {:db_connection, "~> 2.4"},
       # HTTP
       {:req, "~> 0.5"},
+      {:plug, "~> 1.0"},
       {:jose, "~> 1.11"},
       {:jason, "~> 1.0"},
       # Linting

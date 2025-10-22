@@ -609,15 +609,17 @@ defmodule Snowflex.Transport.Http do
       {:ok, %{status: status, body: body}} when status in 200..299 ->
         {:ok, status, body}
 
-      {:ok, %{body: %{"code" => code, "message" => message}} = body} ->
+      {:ok, %{body: %{"code" => code, "message" => message}} = response} ->
         {:error,
          %Error{
            message: String.replace(message, ~r/\n/, " "),
            code: code,
-           sql_state: Map.get(body, "sqlState"),
+           sql_state: Map.get(response.body, "sqlState"),
            metadata: %{
+             query_id: Map.get(response.body, "statementHandle"),
+             statement: statement,
              request: req_body,
-             response: body,
+             response: response.body,
              opts: opts
            }
          }}
@@ -628,6 +630,8 @@ defmodule Snowflex.Transport.Http do
            code: status,
            message: inspect(body),
            metadata: %{
+             query_id: if(is_map(body), do: Map.get(body, "statementHandle"), else: nil),
+             statement: statement,
              request: req_body,
              response: body,
              opts: opts
@@ -639,7 +643,7 @@ defmodule Snowflex.Transport.Http do
          %Error{
            message: inspect(exception),
            code: "HTTP_ERROR",
-           metadata: %{request: req_body, opts: opts}
+           metadata: %{statement: statement, request: req_body, opts: opts}
          }}
     end
   end
@@ -654,11 +658,26 @@ defmodule Snowflex.Transport.Http do
         {:ok, partition_body}
 
       {:ok, %{status: status, body: error_body}} ->
-        {:error, %Error{message: "HTTP #{status}: #{inspect(error_body)}"}}
+        {:error,
+         %Error{
+           message: "HTTP #{status}: #{inspect(error_body)}",
+           metadata: %{
+             query_id: statement_handle,
+             partition_index: partition_index
+           }
+         }}
 
       {:error, exception} ->
         Logger.warning("Failed to fetch partition #{partition_index}: #{inspect(exception)}")
-        {:error, %Error{message: "Failed to fetch partition: #{inspect(exception)}"}}
+
+        {:error,
+         %Error{
+           message: "Failed to fetch partition: #{inspect(exception)}",
+           metadata: %{
+             query_id: statement_handle,
+             partition_index: partition_index
+           }
+         }}
     end
   end
 
