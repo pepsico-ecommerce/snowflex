@@ -52,13 +52,16 @@ config :my_app, MyApp.Repo,
   # Additional options passed to the transport
   account_name: "your-account",
   username: "your_username",
-  private_key_path: "path/to/key.pem",
+  private_key_path: "path/to/key.pem",  # Path to private key file
+  # OR alternatively, provide the private key as a string:
+  # private_key_from_string: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
   public_key_fingerprint: "your_fingerprint"
 ```
 
 You may supply other transports that conform to the `Snowflex.Transport` behaviour.
 
 For additional configuration options of the provided `Snowflex.Transport.Http` transport, see it's documentation.
+
 
 ## Query Tagging
 
@@ -151,7 +154,7 @@ Snowflex does not support multi-statement transactions. The reason for this is t
 
 ### Multiple Statements
 
-Snowflex supports submitting multiple statements in the same query and will return the results of each statement packed into an array.  
+Snowflex supports submitting multiple statements in the same query and will return the results of each statement packed into an array.
 
 This can be useful when statements you want to execute need to occur inside of the same transaction (e.g. you need to leverage a temporary table)
 This is possible using both the `query` and `query_many` functions.
