@@ -29,4 +29,9 @@ defmodule Snowflex.Transport do
   Disconnect from the database.  See `c:DBConnection.handle_close/3` for more information.
   """
   @callback disconnect(pid()) :: :ok
+
+  @doc """
+  Periodic pings to the server, default is once per second. See `c:DBConnection.ping/1` for more information.
+  """
+  @callback ping(pid()) :: query_result()
 end

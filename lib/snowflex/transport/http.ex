@@ -130,6 +130,10 @@ defmodule Snowflex.Transport.Http do
   end
 
   @impl Snowflex.Transport
+  # HTTP transport does not care about connection state or sessions, we do not need ping
+  def ping(_pid), do: {:ok, %Result{}}
+
+  @impl Snowflex.Transport
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts)
   end
