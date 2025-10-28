@@ -6,7 +6,6 @@ defmodule Snowflex.Connection do
   use DBConnection
 
   alias Snowflex.Error
-  alias Snowflex.Query
   alias Snowflex.Result
   alias Snowflex.Transport.Http
 
@@ -57,16 +56,14 @@ defmodule Snowflex.Connection do
   end
 
   @impl DBConnection
-  def ping(state) do
-    query = %Query{name: "ping", statement: "SELECT /* snowflex:heartbeat */ 1;"}
+  def ping(%{transport: transport, pid: pid} = state) do
+    set_base_metadata(state)
 
-    set_base_metadata(state, query)
-
-    case handle_execute(query, [], [], state) do
-      {:ok, _query, _result, _state} ->
+    case transport.ping(pid) do
+      {:ok, _result} ->
         {:ok, state}
 
-      {:error, reason, _} ->
+      {:error, reason} ->
         enrich_logger_metadata_from_error(reason)
         {:disconnect, reason, state}
     end
