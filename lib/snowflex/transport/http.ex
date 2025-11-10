@@ -466,10 +466,14 @@ defmodule Snowflex.Transport.Http do
         {:ok, opts, key}
 
       {path, key} when is_binary(path) and is_binary(key) ->
-        {:stop, %Error{message: "Both :private_key_path and :private_key_from_string provided. Use only one."}}
+        {:stop,
+         %Error{
+           message: "Both :private_key_path and :private_key_from_string provided. Use only one."
+         }}
 
       _any ->
-        {:stop, %Error{message: "Either :private_key_path or :private_key_from_string must be provided"}}
+        {:stop,
+         %Error{message: "Either :private_key_path or :private_key_from_string must be provided"}}
     end
   end
 
@@ -505,7 +509,6 @@ defmodule Snowflex.Transport.Http do
         {:stop, error}
     end
   end
-
 
   # Token helpers
 
