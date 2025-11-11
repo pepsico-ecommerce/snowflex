@@ -454,13 +454,7 @@ defmodule Snowflex.Transport.Http do
 
     case {private_key_path, private_key_from_string} do
       {path, nil} when is_binary(path) and byte_size(path) > 0 ->
-        case File.read(path) do
-          {:ok, key} ->
-            {:ok, opts, key}
-
-          {:error, reason} ->
-            {:stop, %Error{message: "Failed to read private key from path: #{inspect(reason)}"}}
-        end
+        read_private_key_from_file(opts, path)
 
       {nil, key} when is_binary(key) and byte_size(key) > 0 ->
         {:ok, opts, key}
@@ -474,6 +468,16 @@ defmodule Snowflex.Transport.Http do
       _any ->
         {:stop,
          %Error{message: "Either :private_key_path or :private_key_from_string must be provided"}}
+    end
+  end
+
+  defp read_private_key_from_file(opts, path) do
+    case File.read(path) do
+      {:ok, key} ->
+        {:ok, opts, key}
+
+      {:error, reason} ->
+        {:stop, %Error{message: "Failed to read private key from path: #{inspect(reason)}"}}
     end
   end
 
