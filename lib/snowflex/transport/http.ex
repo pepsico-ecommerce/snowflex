@@ -10,7 +10,8 @@ defmodule Snowflex.Transport.Http do
   ### Required Options
   * `:account_name` - Your Snowflake account identifier (e.g., "my-org-my-account")
   * `:username` - Your Snowflake username
-  * `:private_key_path` - Path to your private key file (PEM format)
+  * `:private_key_path` - Path to your private key file (PEM format) OR
+  * `:private_key_from_string` - Your private key as a string (PEM format)
   * `:public_key_fingerprint` - Fingerprint of your public key
 
   ### Optional Options
@@ -45,6 +46,33 @@ defmodule Snowflex.Transport.Http do
   The transport uses JWT authentication with RSA key pairs. The private key must be in PEM format
   and the public key fingerprint must be registered with Snowflake.
 
+  ## Private Key Configuration
+
+  Snowflex supports two ways to provide your private key for authentication:
+
+  ### 1. File Path (traditional method)
+  ```elixir
+  config :my_app, MyApp.Repo,
+    # ... other options ...
+    private_key_path: "/path/to/your/private_key.pem"
+  ```
+
+  ### 2. String (inline method)
+  ```elixir
+  config :my_app, MyApp.Repo,
+    # ... other options ...
+    private_key_from_string: System.get_env("SNOWFLAKE_PRIVATE_KEY") || \"\"\"
+    -----BEGIN PRIVATE KEY-----
+    MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...
+    -----END PRIVATE KEY-----
+    \"\"\"
+  ```
+
+  **Important notes:**
+  - You must provide either `private_key_path` OR `private_key_from_string`, not both
+  - Both options accept PEM format private keys
+  - The string method is useful when deploying to environments where file system access is restricted or when storing keys in environment variables/secrets management systems
+
   ## Example Configuration
 
   ```elixir
@@ -54,6 +82,8 @@ defmodule Snowflex.Transport.Http do
     account_name: "my-org-my-account",
     username: "my_user",
     private_key_path: "/path/to/key.pem",
+    # OR alternatively use private_key_from_string instead of private_key_path:
+    # private_key_from_string: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
     public_key_fingerprint: "abc123...",
     database: "MY_DB",
     schema: "MY_SCHEMA",
@@ -192,8 +222,7 @@ defmodule Snowflex.Transport.Http do
 
   @impl GenServer
   def init(opts) do
-    with {:ok, validated_opts} <- validate_opts(opts),
-         {:ok, private_key} <- read_private_key(validated_opts),
+    with {:ok, validated_opts, private_key} <- validate_and_read_private_key(opts),
          {:ok, state} <- init_state(validated_opts, private_key) do
       check_connection(state)
     end
@@ -393,9 +422,18 @@ defmodule Snowflex.Transport.Http do
   end
 
   # Init/Config Helpers
-  defp validate_opts(opts) do
+  defp validate_and_read_private_key(opts) do
+    with {:ok, opts} <- validate_required_opts(opts),
+         {:ok, opts, private_key} <- validate_and_read_private_key_opts(opts) do
+      {:ok, opts, private_key}
+    else
+      {:stop, error} -> {:stop, error}
+    end
+  end
+
+  defp validate_required_opts(opts) do
     Enum.reduce_while(
-      [:account_name, :username, :private_key_path, :public_key_fingerprint],
+      [:account_name, :username, :public_key_fingerprint],
       {:ok, opts},
       fn
         key, validated_opts ->
@@ -408,6 +446,39 @@ defmodule Snowflex.Transport.Http do
           end
       end
     )
+  end
+
+  defp validate_and_read_private_key_opts(opts) do
+    private_key_path = Keyword.get(opts, :private_key_path)
+    private_key_from_string = Keyword.get(opts, :private_key_from_string)
+
+    case {private_key_path, private_key_from_string} do
+      {path, nil} when is_binary(path) and byte_size(path) > 0 ->
+        read_private_key_from_file(opts, path)
+
+      {nil, key} when is_binary(key) and byte_size(key) > 0 ->
+        {:ok, opts, key}
+
+      {path, key} when is_binary(path) and is_binary(key) ->
+        {:stop,
+         %Error{
+           message: "Both :private_key_path and :private_key_from_string provided. Use only one."
+         }}
+
+      _any ->
+        {:stop,
+         %Error{message: "Either :private_key_path or :private_key_from_string must be provided"}}
+    end
+  end
+
+  defp read_private_key_from_file(opts, path) do
+    case File.read(path) do
+      {:ok, key} ->
+        {:ok, opts, key}
+
+      {:error, reason} ->
+        {:stop, %Error{message: "Failed to read private key from path: #{inspect(reason)}"}}
+    end
   end
 
   defp init_state(validated_opts, private_key) do
@@ -440,18 +511,6 @@ defmodule Snowflex.Transport.Http do
 
       {:error, error} ->
         {:stop, error}
-    end
-  end
-
-  defp read_private_key(validated_opts) do
-    path = Keyword.fetch!(validated_opts, :private_key_path)
-
-    case File.read(path) do
-      {:ok, key} ->
-        {:ok, key}
-
-      {:error, reason} ->
-        {:stop, %Error{message: "Failed to read private key: #{inspect(reason)}"}}
     end
   end
 
