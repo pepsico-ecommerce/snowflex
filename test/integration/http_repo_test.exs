@@ -741,10 +741,11 @@ defmodule HttpRepoTest do
       {:ok, _} =
         Http.query("""
         INSERT INTO snowflex_test_objects (id, data, created_at)
-        VALUES
-          (1, PARSE_JSON('{"name": "John", "age": 30}'), '#{timestamp}'),
-          (2, PARSE_JSON('{"name": "Jane", "age": 25}'), '#{timestamp}'),
-          (3, PARSE_JSON('{"name": "Bob", "age": 35}'), '#{timestamp}')
+        SELECT 1, PARSE_JSON('{"name": "John", "age": 30}'), '#{timestamp}'
+        UNION ALL
+        SELECT 2, PARSE_JSON('{"name": "Jane", "age": 25}'), '#{timestamp}'
+        UNION ALL
+        SELECT 3, PARSE_JSON('{"name": "Bob", "age": 35}'), '#{timestamp}';
         """)
 
       # Query using dot notation

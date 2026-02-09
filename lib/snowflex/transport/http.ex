@@ -26,7 +26,8 @@ defmodule Snowflex.Transport.Http do
   * `:max_retries` - Maximum retry attempts for rate limits (default: 3)
   * `:retry_base_delay` - Base delay for exponential backoff in milliseconds (default: 1000)
   * `:retry_max_delay` - Maximum delay between retries in milliseconds (default: 8000)
-  * `:connect_options` - Connection options for `Req`, see `Req.new/1` for more details.
+  * `:connect_options` - Connection options for Finch pool configuration
+  * `:req_options` - Additional options to pass to `Req.new/1` (e.g., `:plug` for testing)
 
   ## Account Name Handling
 
@@ -133,7 +134,8 @@ defmodule Snowflex.Transport.Http do
       :max_retries,
       :retry_base_delay,
       :retry_max_delay,
-      :connect_options
+      :connect_options,
+      :req_options
     ]
 
     @type t :: %__MODULE__{
@@ -155,7 +157,8 @@ defmodule Snowflex.Transport.Http do
             max_retries: non_neg_integer(),
             retry_base_delay: non_neg_integer(),
             retry_max_delay: non_neg_integer(),
-            connect_options: Keyword.t()
+            connect_options: Keyword.t(),
+            req_options: Keyword.t()
           }
   end
 
@@ -212,6 +215,43 @@ defmodule Snowflex.Transport.Http do
   @spec client(GenServer.server()) :: Req.Request.t()
   def client(pid) do
     GenServer.call(pid, :client)
+  end
+
+  @doc """
+  Returns the current set of options for Req.
+
+  This can be useful when you need to execute an arbitrary API request against Snowflake's REST API,
+  but need more control over how the Req client is built.
+
+  To keep Snowflex's internal Req usage simpler, we do *not* support the full gamut of options that `Req` does,
+  only the subset we rely upon.  Your use case might necessitate changing/modifying/adding other options however.
+
+  For example, if you want to specify a different `Finch` pool to use, you currently can't, because `Http` sets the
+  `connection_options` for Req.  `Req` does not allow specifying `connection_options` AND `finch` at the same time.
+
+  We can use `options/1` to get the current options, and then modify them as needed:
+
+  ## Example:
+  ```elixir
+    {:ok, options} =
+      :my_app
+      |> Application.get_config(MyRepo)
+      |> Snowflex.Transport.Http.options()
+
+    options
+    |> Keyword.delete(:connect_options)
+    |> Keyword.put(:finch, MyFinch)
+    |> Req.new()
+  ```
+  """
+  @spec options(keyword) :: {:ok, keyword} | {:error, term()}
+  def options(config) when is_list(config) do
+    with {:ok, validated_opts, private_key} <- validate_and_read_private_key(config),
+         {:ok, state} <- init_state(validated_opts, private_key) do
+      {:ok, build_options(state)}
+    else
+      {:stop, error} -> {:error, error}
+    end
   end
 
   defp add_default_timeout(opts) do
@@ -500,7 +540,8 @@ defmodule Snowflex.Transport.Http do
        max_retries: Keyword.get(validated_opts, :max_retries, 3),
        retry_base_delay: Keyword.get(validated_opts, :retry_base_delay, 1000),
        retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000),
-       connect_options: Keyword.get(validated_opts, :connect_options, [])
+       connect_options: Keyword.get(validated_opts, :connect_options, []),
+       req_options: Keyword.get(validated_opts, :req_options, [])
      }}
   end
 
@@ -560,10 +601,10 @@ defmodule Snowflex.Transport.Http do
 
   # HTTP
 
-  defp build_req_client(state) do
+  defp build_options(state) do
     base_url = "https://#{state.account_name}.snowflakecomputing.com"
 
-    Req.new(
+    base_options = [
       base_url: base_url,
       headers: [
         {"Authorization", "Bearer #{generate_token(state)}"},
@@ -578,7 +619,15 @@ defmodule Snowflex.Transport.Http do
       end,
       max_retries: state.max_retries,
       connect_options: state.connect_options
-    )
+    ]
+
+    Keyword.merge(base_options, state.req_options)
+  end
+
+  defp build_req_client(state) do
+    state
+    |> build_options()
+    |> Req.new()
   end
 
   defp snowflex_version do
