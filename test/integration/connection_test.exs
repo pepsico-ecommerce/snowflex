@@ -40,7 +40,7 @@ defmodule Snowflex.ConnectionTest do
       assert message =~ "SQL compilation error"
     end
 
-    @tag :long_running_test
+    @tag timeout: :infinity
     test "supports queries longer than 45 seconds" do
       assert {:ok, %{rows: _rows}} =
                Http.query("CALL SYSTEM$WAIT(60);", [], timeout: :timer.seconds(180))
