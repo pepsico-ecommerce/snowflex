@@ -54,8 +54,6 @@ defmodule Snowflex.MockReqResponsesTest do
           )
       end)
 
-      Req.default_options(plug: {Req.Test, MockHttp})
-
       start_link_supervised!(
         {TestSnowflakeRepo,
          [
@@ -65,7 +63,8 @@ defmodule Snowflex.MockReqResponsesTest do
            public_key_fingerprint:
              "4dfd2c71b73c0c5a600c5e96004ca52204dfd74632e8e53738770538f7b8af5c",
            role: "fake_role",
-           warehouse: "fake_warehouse"
+           warehouse: "fake_warehouse",
+           req_options: [plug: {Req.Test, MockHttp}]
          ]}
       )
 
