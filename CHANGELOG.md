@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-09
+
+### Enhancements
+
+- Add support for `options/1` to get Req.options ([#140](https://github.com/pepsico-ecommerce/snowflex/pull/140))
+
+### Bug Fixes
+
+- Resolve failing integration tests ([#140](https://github.com/pepsico-ecommerce/snowflex/pull/140))
+- Fix compiler warning on Elixir 1.19 ([#140](https://github.com/pepsico-ecommerce/snowflex/pull/140))
+- Fix global setting of req options ([#140](https://github.com/pepsico-ecommerce/snowflex/pull/140))
+
+### Changed
+
+- Bump [ex_doc from 0.39.3 to 0.40.0](https://github.com/elixir-lang/ex_doc/compare/v0.39.3...v0.40.0) ([#138](https://github.com/pepsico-ecommerce/snowflex/pull/138)) by dependabot
+- Bump [db_connection from 2.8.1 to 2.9.0](https://github.com/elixir-ecto/db_connection/compare/v2.8.1...v2.9.0) ([#137](https://github.com/pepsico-ecommerce/snowflex/pull/137)) by dependabot
+- Bump [req from 0.5.16 to 0.5.17](https://github.com/wojtekmach/req/compare/v0.5.16...v0.5.17) ([#136](https://github.com/pepsico-ecommerce/snowflex/pull/136)) by dependabot
+- Bump [credo from 1.7.14 to 1.7.15](https://github.com/rrrene/credo/compare/v1.7.14...v1.7.15) ([#135](https://github.com/pepsico-ecommerce/snowflex/pull/135)) by dependabot
+- Bump [ex_doc from 0.39.2 to 0.39.3](https://github.com/elixir-lang/ex_doc/compare/v0.39.2...v0.39.3) ([#134](https://github.com/pepsico-ecommerce/snowflex/pull/134)) by dependabot
+- Bump [plug from 1.19.0 to 1.19.1](https://github.com/elixir-plug/plug/compare/v1.19.0...v1.19.1) ([#133](https://github.com/pepsico-ecommerce/snowflex/pull/133)) by dependabot
+- Bump [ecto_sql from 3.13.2 to 3.13.4](https://github.com/elixir-ecto/ecto_sql/compare/v3.13.2...v3.13.4) ([#132](https://github.com/pepsico-ecommerce/snowflex/pull/132)) by dependabot
+- Bump [plug from 1.18.1 to 1.19.0](https://github.com/elixir-plug/plug/compare/v1.18.1...v1.19.0) ([#131](https://github.com/pepsico-ecommerce/snowflex/pull/131)) by dependabot
+- Bump [ex_doc from 0.39.1 to 0.39.2](https://github.com/elixir-lang/ex_doc/compare/v0.39.1...v0.39.2) ([#130](https://github.com/pepsico-ecommerce/snowflex/pull/130)) by dependabot
+- Bump [credo from 1.7.13 to 1.7.14](https://github.com/rrrene/credo/compare/v1.7.13...v1.7.14) ([#129](https://github.com/pepsico-ecommerce/snowflex/pull/129)) by dependabot
+
 ## [1.1.0] - 2025-10-28
 
 ### Enhancements
