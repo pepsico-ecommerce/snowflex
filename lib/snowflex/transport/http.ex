@@ -217,6 +217,43 @@ defmodule Snowflex.Transport.Http do
     GenServer.call(pid, :client)
   end
 
+  @doc """
+  Returns the current set of options for Req.
+
+  This can be useful when you need to execute an arbitrary API request against Snowflake's REST API,
+  but need more control over how the Req client is built.
+
+  To keep Snowflex's internal Req usage simpler, we do *not* support the full gamut of options that `Req` does,
+  only the subset we rely upon.  Your use case might necessitate changing/modifying/adding other options however.
+
+  For example, if you want to specify a different `Finch` pool to use, you currently can't, because `Http` sets the
+  `connection_options` for Req.  `Req` does not allow specifying `connection_options` AND `finch` at the same time.
+
+  We can use `options/1` to get the current options, and then modify them as needed:
+
+  ## Example:
+  ```elixir
+    {:ok, options} =
+      :my_app
+      |> Application.get_config(MyRepo)
+      |> Snowflex.Transport.Http.options()
+
+    options
+    |> Keyword.delete(:connect_options)
+    |> Keyword.put(:finch, MyFinch)
+    |> Req.new()
+  ```
+  """
+  @spec options(keyword) :: {:ok, keyword} | {:error, term()}
+  def options(config) when is_list(config) do
+    with {:ok, validated_opts, private_key} <- validate_and_read_private_key(config),
+         {:ok, state} <- init_state(validated_opts, private_key) do
+      {:ok, build_options(state)}
+    else
+      {:stop, error} -> {:error, error}
+    end
+  end
+
   defp add_default_timeout(opts) do
     Keyword.put_new(opts, :timeout, :timer.seconds(45))
   end
@@ -564,10 +601,10 @@ defmodule Snowflex.Transport.Http do
 
   # HTTP
 
-  defp build_req_client(state) do
+  defp build_options(state) do
     base_url = "https://#{state.account_name}.snowflakecomputing.com"
 
-    Req.new(
+    base_options = [
       base_url: base_url,
       headers: [
         {"Authorization", "Bearer #{generate_token(state)}"},
@@ -582,7 +619,15 @@ defmodule Snowflex.Transport.Http do
       end,
       max_retries: state.max_retries,
       connect_options: state.connect_options
-    )
+    ]
+
+    Keyword.merge(base_options, state.req_options)
+  end
+
+  defp build_req_client(state) do
+    state
+    |> build_options()
+    |> Req.new()
   end
 
   defp snowflex_version do
