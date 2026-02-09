@@ -28,12 +28,6 @@ defmodule Snowflex.MixProject do
         plt_core_path: "priv/plts/core.plt"
       ],
       test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test
-      ],
       docs: docs(),
       elixirc_paths: elixirc_paths(Mix.env())
     ]
@@ -42,6 +36,17 @@ defmodule Snowflex.MixProject do
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  def cli do
+    [
+      preferred_envs: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test
+      ]
+    ]
+  end
 
   # Run "mix help compile.app" to learn about applications.
   def application do
