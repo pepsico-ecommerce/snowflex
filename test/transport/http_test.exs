@@ -58,7 +58,7 @@ defmodule Snowflex.Transport.HttpTest do
       opts = @fullsweep_opts ++ [fullsweep_after: 0]
       {:ok, pid} = Http.start_link(opts)
 
-      {:garbage_collection, gc_info} = :erlang.process_info(pid, :garbage_collection)
+      {:garbage_collection, gc_info} = Process.info(pid, :garbage_collection)
       assert gc_info[:fullsweep_after] == 0
 
       GenServer.stop(pid)
@@ -67,7 +67,7 @@ defmodule Snowflex.Transport.HttpTest do
     test "leaves default when fullsweep_after is not provided" do
       {:ok, pid} = Http.start_link(@fullsweep_opts)
 
-      {:garbage_collection, gc_info} = :erlang.process_info(pid, :garbage_collection)
+      {:garbage_collection, gc_info} = Process.info(pid, :garbage_collection)
       assert gc_info[:fullsweep_after] > 0
 
       GenServer.stop(pid)
