@@ -33,6 +33,45 @@ defmodule Snowflex.Transport.HttpTest do
     assert %{} = Http.execute_statement(pid, nil, nil, timeout: 1000)
   end
 
+  describe "fullsweep_after option" do
+    setup do
+      Req.Test.set_req_test_to_shared(%{})
+
+      Req.Test.stub(Snowflex.Transport.HttpTest.FullsweepPlug, fn conn ->
+        Req.Test.json(conn, %{})
+      end)
+
+      :ok
+    end
+
+    @fullsweep_opts [
+      account_name: "test-account",
+      username: "test_user",
+      public_key_fingerprint: "test_fingerprint",
+      private_key_path: Path.join(File.cwd!(), "test/fixtures/fake_private_key.pem"),
+      req_options: [plug: {Req.Test, Snowflex.Transport.HttpTest.FullsweepPlug}]
+    ]
+
+    test "sets process flag when fullsweep_after is provided" do
+      opts = @fullsweep_opts ++ [fullsweep_after: 0]
+      {:ok, pid} = Http.start_link(opts)
+
+      {:garbage_collection, gc_info} = :erlang.process_info(pid, :garbage_collection)
+      assert gc_info[:fullsweep_after] == 0
+
+      GenServer.stop(pid)
+    end
+
+    test "leaves default when fullsweep_after is not provided" do
+      {:ok, pid} = Http.start_link(@fullsweep_opts)
+
+      {:garbage_collection, gc_info} = :erlang.process_info(pid, :garbage_collection)
+      assert gc_info[:fullsweep_after] > 0
+
+      GenServer.stop(pid)
+    end
+  end
+
   describe "private key configuration" do
     # Sample private key for testing (this is a dummy key generated for testing only)
     @test_private_key """
