@@ -264,7 +264,8 @@ defmodule Snowflex.Transport.Http do
   @impl GenServer
   def init(opts) do
     if fullsweep_after = Keyword.get(opts, :fullsweep_after) do
-      :erlang.process_flag(:fullsweep_after, fullsweep_after)
+      _ = :erlang.process_flag(:fullsweep_after, fullsweep_after)
+      :ok
     end
 
     with {:ok, validated_opts, private_key} <- validate_and_read_private_key(opts),

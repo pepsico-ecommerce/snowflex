@@ -1,8 +1,10 @@
 defmodule Snowflex.Transport.HttpTest do
   use ExUnit.Case
 
+  alias Req.Test, as: ReqTest
   alias Snowflex.Error
   alias Snowflex.Transport.Http
+  alias Snowflex.Transport.HttpTest.FullsweepPlug
 
   defmodule DummyHttp do
     use GenServer
@@ -35,10 +37,10 @@ defmodule Snowflex.Transport.HttpTest do
 
   describe "fullsweep_after option" do
     setup do
-      Req.Test.set_req_test_to_shared(%{})
+      ReqTest.set_req_test_to_shared(%{})
 
-      Req.Test.stub(Snowflex.Transport.HttpTest.FullsweepPlug, fn conn ->
-        Req.Test.json(conn, %{})
+      ReqTest.stub(FullsweepPlug, fn conn ->
+        ReqTest.json(conn, %{})
       end)
 
       :ok
@@ -49,7 +51,7 @@ defmodule Snowflex.Transport.HttpTest do
       username: "test_user",
       public_key_fingerprint: "test_fingerprint",
       private_key_path: Path.join(File.cwd!(), "test/fixtures/fake_private_key.pem"),
-      req_options: [plug: {Req.Test, Snowflex.Transport.HttpTest.FullsweepPlug}]
+      req_options: [plug: {ReqTest, FullsweepPlug}]
     ]
 
     test "sets process flag when fullsweep_after is provided" do
