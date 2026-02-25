@@ -22,7 +22,7 @@
 > This README is for the unreleased main branch, please reference the [official documentation on
 > hexdocs][hexdoc] for the latest stable release.
 
-[hexdoc]: https://hexdocs.pm/snowflex/readme.html
+[hexdoc]: https://hexdocs.pm/snowflex/Snowflex.html
 
 <!-- MDOC -->
 
@@ -102,7 +102,7 @@ The following metadata keys are set when errors occur:
 
 ### Configuring Logger
 
-To capture this metadata in your logs, see [Logger's Metadata Section](https://hexdocs.pm/logger/1.12.3/Logger.html#module-metadata) for more information on how to configure Logger.
+To capture this metadata in your logs, see [Logger's Metadata Section](https://hexdocs.pm/logger/Logger.html#module-metadata) for more information on how to configure Logger.
 
 ### Example Error Log
 
