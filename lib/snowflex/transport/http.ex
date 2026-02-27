@@ -207,6 +207,12 @@ defmodule Snowflex.Transport.Http do
     :ok
   end
 
+  @impl Snowflex.Transport
+  def deallocate(pid) do
+    GenServer.cast(pid, :deallocate)
+    :ok
+  end
+
   @doc """
   Returns the current `t:Req.Request` for the transport.
 
@@ -284,7 +290,7 @@ defmodule Snowflex.Transport.Http do
          {:ok, raw_result} <- gather_results(state, body, opts) do
       # And then format it for return
       result = format_response_body(raw_result)
-      {:reply, {:ok, result}, state}
+      {:reply, {:ok, result}, state, :hibernate}
     else
       {:error, error} -> {:reply, {:error, error}, state}
     end
@@ -343,11 +349,17 @@ defmodule Snowflex.Transport.Http do
         } = state
       )
       when is_binary(current_statement) and byte_size(current_statement) > 0 do
-    {:reply, {:halt, %Result{}}, state}
+    {:reply, {:halt, %Result{}}, state, :hibernate}
   end
 
   def handle_call({:fetch, _max_partition, _num_rows}, _from, state) do
     {:reply, {:error, %Error{message: "No active statement"}}, state}
+  end
+
+  @impl GenServer
+  def handle_cast(:deallocate, state) do
+    {:noreply, %{state | current_statement: nil, current_partition: nil, result_metadata: nil},
+     :hibernate}
   end
 
   ## Query helpers
@@ -392,13 +404,17 @@ defmodule Snowflex.Transport.Http do
     )
     |> Enum.reduce_while({:ok, []}, fn
       {:ok, {:ok, result_body}}, {:ok, acc} ->
-        {:cont, {:ok, acc ++ [{:ok, result_body}]}}
+        {:cont, {:ok, [{:ok, result_body} | acc]}}
 
       {:ok, {:error, error}}, _acc ->
         {:halt, {:error, error}}
 
       {:exit, reason}, _acc ->
         {:halt, {:error, %Error{message: "Task failed: #{inspect(reason)}"}}}
+    end)
+    |> then(fn
+      {:ok, results} -> {:ok, Enum.reverse(results)}
+      error -> error
     end)
   end
 
@@ -433,11 +449,10 @@ defmodule Snowflex.Transport.Http do
       timeout: extended_timeout,
       on_timeout: :kill_task
     )
-    |> Enum.reduce_while({:ok, initial_data}, fn
-      {:ok, {:ok, partition_body}}, {:ok, acc_data} ->
-        # Extract data from this partition and add to accumulated data
+    |> Enum.reduce_while({:ok, [initial_data]}, fn
+      {:ok, {:ok, partition_body}}, {:ok, acc_chunks} ->
         partition_data = Map.get(partition_body, "data", [])
-        {:cont, {:ok, acc_data ++ partition_data}}
+        {:cont, {:ok, [partition_data | acc_chunks]}}
 
       {:ok, {:error, error}}, _acc ->
         {:halt, {:error, error}}
@@ -446,8 +461,8 @@ defmodule Snowflex.Transport.Http do
         {:halt, {:error, %Error{message: "Task failed: #{inspect(reason)}"}}}
     end)
     |> then(fn
-      {:ok, merged_data} ->
-        # Update the original body with the merged data
+      {:ok, chunks} ->
+        merged_data = chunks |> Enum.reverse() |> Enum.concat()
         merged_body = Map.put(body, "data", merged_data)
         {:ok, merged_body}
 
