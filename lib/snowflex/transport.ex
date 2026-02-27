@@ -31,6 +31,11 @@ defmodule Snowflex.Transport do
   @callback disconnect(pid()) :: :ok
 
   @doc """
+  Clean up cursor state after streaming is complete. See `c:DBConnection.handle_deallocate/4` for more information.
+  """
+  @callback deallocate(pid()) :: :ok
+
+  @doc """
   Periodic pings to the server, default is once per second. See `c:DBConnection.ping/1` for more information.
   """
   @callback ping(pid()) :: query_result()

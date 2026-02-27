@@ -110,8 +110,9 @@ defmodule Snowflex.Connection do
   end
 
   @impl DBConnection
-  def handle_deallocate(_query, _cursor, _opts, state) do
-    {:ok, state.pid, state}
+  def handle_deallocate(_query, _cursor, _opts, %{transport: transport, pid: pid} = state) do
+    transport.deallocate(pid)
+    {:ok, pid, state}
   end
 
   @impl DBConnection
