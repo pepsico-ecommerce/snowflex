@@ -1,8 +1,10 @@
 defmodule Snowflex.Transport.HttpTest do
   use ExUnit.Case
 
+  alias Req.Test, as: ReqTest
   alias Snowflex.Error
   alias Snowflex.Transport.Http
+  alias Snowflex.Transport.HttpTest.FullsweepPlug
 
   defmodule DummyHttp do
     use GenServer
@@ -31,6 +33,45 @@ defmodule Snowflex.Transport.HttpTest do
              Http.execute_statement(pid, "Select 1", nil, timeout: 10)
 
     assert %{} = Http.execute_statement(pid, nil, nil, timeout: 1000)
+  end
+
+  describe "fullsweep_after option" do
+    setup do
+      ReqTest.set_req_test_to_shared(%{})
+
+      ReqTest.stub(FullsweepPlug, fn conn ->
+        ReqTest.json(conn, %{})
+      end)
+
+      :ok
+    end
+
+    @fullsweep_opts [
+      account_name: "test-account",
+      username: "test_user",
+      public_key_fingerprint: "test_fingerprint",
+      private_key_path: Path.join(File.cwd!(), "test/fixtures/fake_private_key.pem"),
+      req_options: [plug: {ReqTest, FullsweepPlug}]
+    ]
+
+    test "sets process flag when fullsweep_after is provided" do
+      opts = @fullsweep_opts ++ [fullsweep_after: 0]
+      {:ok, pid} = Http.start_link(opts)
+
+      {:garbage_collection, gc_info} = Process.info(pid, :garbage_collection)
+      assert gc_info[:fullsweep_after] == 0
+
+      GenServer.stop(pid)
+    end
+
+    test "leaves default when fullsweep_after is not provided" do
+      {:ok, pid} = Http.start_link(@fullsweep_opts)
+
+      {:garbage_collection, gc_info} = Process.info(pid, :garbage_collection)
+      assert gc_info[:fullsweep_after] > 0
+
+      GenServer.stop(pid)
+    end
   end
 
   describe "private key configuration" do

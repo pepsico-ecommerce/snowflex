@@ -28,6 +28,7 @@ defmodule Snowflex.Transport.Http do
   * `:retry_max_delay` - Maximum delay between retries in milliseconds (default: 8000)
   * `:connect_options` - Connection options for Finch pool configuration
   * `:req_options` - Additional options to pass to `Req.new/1` (e.g., `:plug` for testing)
+  * `:fullsweep_after` - Sets the `fullsweep_after` garbage collection flag on the process (default: ERTS default)
 
   ## Account Name Handling
 
@@ -268,6 +269,11 @@ defmodule Snowflex.Transport.Http do
 
   @impl GenServer
   def init(opts) do
+    if fullsweep_after = Keyword.get(opts, :fullsweep_after) do
+      _ = Process.flag(:fullsweep_after, fullsweep_after)
+      :ok
+    end
+
     with {:ok, validated_opts, private_key} <- validate_and_read_private_key(opts),
          {:ok, state} <- init_state(validated_opts, private_key) do
       check_connection(state)
