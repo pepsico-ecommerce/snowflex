@@ -19,21 +19,27 @@ jobs:
           - elixir: 1.15.7
             otp: 26.2
             check_formatted: false
+            run_assay: false
           - elixir: 1.16.1
             otp: 26.2
             check_formatted: false
+            run_assay: false
           - elixir: 1.17.3
             otp: 27.1.1
             check_formatted: false
+            run_assay: true
           - elixir: 1.18.3
             otp: 27.3.3
             check_formatted: true
+            run_assay: true
           - elixir: 1.19.5
             otp: 28.5.0.1
             check_formatted: true
+            run_assay: true
           - elixir: 1.20.0
             otp: 29.0.1
             check_formatted: true
+            run_assay: true
 
     runs-on: ubuntu-latest
     env:
@@ -65,4 +71,6 @@ jobs:
       - run: mix compile --warnings-as-errors
       - run: mix credo --strict
       - run: mix test --exclude integration
-      - run: mix assay
+      - name: Run assay
+        if: ${{ matrix.run_assay }}
+        run: mix assay
