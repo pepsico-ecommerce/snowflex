@@ -177,7 +177,9 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   end
 
   @impl Ecto.Adapters.SQL.Connection
-  def insert(prefix, table, header, rows, on_conflict, [], []) do
+  def insert(prefix, table, header, rows, on_conflict, returning, placeholders, opts \\ [])
+
+  def insert(prefix, table, header, rows, on_conflict, [], [], _opts) do
     fields = quote_names(header)
 
     [
@@ -190,11 +192,11 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     ]
   end
 
-  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, []) do
+  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, [], _opts) do
     error!(nil, ":returning is not supported in insert/insert_all by Snowflake")
   end
 
-  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, _placeholders) do
+  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, _placeholders, _opts) do
     error!(nil, ":placeholders is not supported by Snowflake")
   end
 
