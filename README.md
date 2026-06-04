@@ -133,7 +133,6 @@ The adapter supports the following type conversions:
 - `:utc_datetime` - UTC datetime values
 - `:naive_datetime` - Naive datetime values
 - `:binary` - Binary data (as hex strings)
-- `:map` - JSON/VARIANT data
 
 ### From Ecto to Snowflake
 
@@ -144,7 +143,6 @@ The adapter supports the following type conversions:
 - `:time` - Time values
 - `:utc_datetime` - UTC datetime values
 - `:naive_datetime` - Naive datetime values
-- `:map` - JSON/VARIANT data
 
 ## Limitations/Considerations
 
