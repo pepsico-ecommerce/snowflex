@@ -9,7 +9,6 @@ defmodule Snowflex.Connection do
   alias Snowflex.Result
   alias Snowflex.Transport.Http
 
-
   @type t :: %__MODULE__{
           pid: pid(),
           transport: any(),
