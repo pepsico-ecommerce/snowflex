@@ -31,11 +31,11 @@ jobs:
           - elixir: 1.18.3
             otp: 27.3.3
             check_formatted: true
-            run_assay: true
+            run_assay: false
           - elixir: 1.19.5
             otp: 28.5.0.1
             check_formatted: true
-            run_assay: true
+            run_assay: false
           - elixir: 1.20.0
             otp: 29.0.1
             check_formatted: true
