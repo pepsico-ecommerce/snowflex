@@ -42,8 +42,6 @@ jobs:
             run_assay: true
 
     runs-on: ubuntu-latest
-    env:
-      MIX_ENV: test
 
     steps:
       - uses: actions/checkout@v5
@@ -71,6 +69,8 @@ jobs:
       - run: mix compile --warnings-as-errors
       - run: mix credo --strict
       - run: mix test --exclude integration
+        env:
+          MIX_ENV: test
       - name: Run assay
         if: ${{ matrix.run_assay }}
         run: mix assay
