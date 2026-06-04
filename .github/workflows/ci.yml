@@ -28,6 +28,12 @@ jobs:
           - elixir: 1.18.3
             otp: 27.3.3
             mix_check: formatted
+          - elixir: 1.19.5
+            otp: 28.5.0.1
+            mix_check: formatted
+          - elixir: 1.20.0
+            otp: 29.0.1
+            mix_check: formatted
 
     runs-on: ubuntu-latest
 
