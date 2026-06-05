@@ -13,19 +13,11 @@ defmodule Snowflex.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
-      dialyzer: [
-        plt_add_apps: [:ex_unit, :mix, :credo, :earmark],
-        list_unused_filters: true,
-        flags: [
-          :no_opaque,
-          :unknown,
-          :unmatched_returns,
-          :extra_return,
-          :missing_return,
-          :error_handling
-        ],
-        plt_file: {:no_warn, "priv/plts/project.plt"},
-        plt_core_path: "priv/plts/core.plt"
+      assay: [
+        dialyzer: [
+          apps: [:project_plus_deps, :ex_unit, :mix],
+          warning_apps: :project
+        ]
       ],
       test_coverage: [tool: ExCoveralls],
       docs: docs(),
@@ -80,9 +72,8 @@ defmodule Snowflex.MixProject do
       {:jose, "~> 1.11"},
       {:jason, "~> 1.0"},
       # Linting
-      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
+      {:assay, "~> 0.5", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: :dev, runtime: false},
-      {:ex_check, "~> 0.12", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.13", only: :test},
       {:doctor, "~> 0.23.0", only: :dev},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},

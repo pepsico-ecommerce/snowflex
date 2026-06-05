@@ -318,32 +318,6 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     ["SELECT", select_distinct, ?\s | select_fields(fields, sources, query)]
   end
 
-  defp select([], _sources, _query),
-    do: "TRUE"
-
-  defp select(fields, sources, query) do
-    intersperse_map(fields, ", ", fn
-      {:&, _, [idx]} ->
-        case elem(sources, idx) do
-          {source, _, nil} ->
-            error!(
-              query,
-              "Snowflake does not support selecting all fields from #{source} without a schema. " <>
-                "Please specify a schema or specify exactly which fields you want to select"
-            )
-
-          {_, source, _} ->
-            source
-        end
-
-      {key, value} ->
-        [expr(value, sources, query), " AS ", quote_name(key)]
-
-      value ->
-        expr(value, sources, query)
-    end)
-  end
-
   defp select_fields([], _sources, _query),
     do: "TRUE"
 
@@ -984,15 +958,12 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   defp ecto_cast_to_db(type, query), do: ecto_to_db(type, query)
 
   defp ecto_to_db({:array, _}, _query), do: "array"
-
-  defp ecto_to_db(:id, _query), do: "number"
   defp ecto_to_db(:serial, query), do: error!(query, "SERIAL is not supported by Snowflake")
 
   defp ecto_to_db(:bigserial, query),
     do: error!(query, "BIGSERIAL is not supported by snowflake")
 
   defp ecto_to_db(:binary_id, _query), do: "varchar"
-  defp ecto_to_db(:string, _query), do: "varchar"
   defp ecto_to_db(:float, _query), do: "number"
   defp ecto_to_db(:binary, _query), do: "varchar"
   # Snowflake does not support uuid
@@ -1001,9 +972,7 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   defp ecto_to_db({:map, _}, _query), do: "variant"
   defp ecto_to_db(:time_usec, _query), do: "time"
   defp ecto_to_db(:utc_datetime, _query), do: "datetime"
-  defp ecto_to_db(:utc_datetime_usec, _query), do: "datetime"
   defp ecto_to_db(:naive_datetime, _query), do: "datetime"
-  defp ecto_to_db(:naive_datetime_usec, _query), do: "datetime"
   defp ecto_to_db(atom, _query) when is_atom(atom), do: Atom.to_string(atom)
 
   defp ecto_to_db(type, _query) do
