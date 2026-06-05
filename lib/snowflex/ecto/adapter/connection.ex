@@ -678,8 +678,24 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     ["NOT (", expr(expr, sources, query), ?)]
   end
 
+  defp expr({:filter, _, [{:count, _, []}, cond]}, sources, query) do
+    ["COUNT_IF(", expr(cond, sources, query), ")"]
+  end
+
+  defp expr({:filter, _, [{agg, _, [arg]}, cond]}, sources, query)
+       when agg in [:count, :sum, :avg, :min, :max] do
+    [
+      Atom.to_string(agg),
+      "(CASE WHEN ",
+      expr(cond, sources, query),
+      " THEN ",
+      expr(arg, sources, query),
+      " END)"
+    ]
+  end
+
   defp expr({:filter, _, _}, _sources, query) do
-    error!(query, "Snowflake adapter does not support aggregate filters")
+    error!(query, "Snowflake adapter does not support filter() on this aggregate")
   end
 
   defp expr(%Ecto.SubQuery{query: query}, sources, parent_query) do
