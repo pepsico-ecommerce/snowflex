@@ -208,29 +208,11 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     []
   end
 
-  defp on_conflict({:nothing, _, []}, [field | _]) do
-    quoted = quote_name(field)
-    [" ON DUPLICATE KEY UPDATE ", quoted, " = " | quoted]
-  end
-
-  defp on_conflict({fields, _, []}, _header) when is_list(fields) do
-    [
-      " ON DUPLICATE KEY UPDATE "
-      | intersperse_map(fields, ?,, fn field ->
-          quoted = quote_name(field)
-          [quoted, " = VALUES(", quoted, ?)]
-        end)
-    ]
-  end
-
-  defp on_conflict({%{wheres: []} = query, _, []}, _header) do
-    [" ON DUPLICATE KEY " | update_all(query, "UPDATE ")]
-  end
-
-  defp on_conflict({_query, _, []}, _header) do
+  defp on_conflict({_, _, []}, _header) do
     error!(
       nil,
-      "Using a query with :where in combination with the :on_conflict option is not supported by Snowflake"
+      ":on_conflict is not supported by Snowflake's INSERT statement. " <>
+        "Use a MERGE INTO statement via raw SQL for upserts."
     )
   end
 
