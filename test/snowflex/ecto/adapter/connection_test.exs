@@ -1242,37 +1242,49 @@ defmodule Snowflex.Ecto.Adapter.ConnectionTest do
                  end
   end
 
-  test "insert with on duplicate key" do
-    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {:nothing, [], []}, [])
+  test "insert with on_conflict" do
+    # :on_conflict :raise is the only supported mode — it emits no extra SQL.
+    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {:raise, [], []}, [])
+    assert query == ~s{INSERT INTO schema (x,y) VALUES (?,?)}
 
-    assert query ==
-             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE x = x}
-
-    update = from("schema", update: [set: [z: "foo"]]) |> plan(:update_all)
-    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
-
-    assert query ==
-             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE z = 'foo'}
-
-    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], []}, [])
-
-    assert query ==
-             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE x = VALUES(x),y = VALUES(y)}
-
+    # :on_conflict :nothing must raise — Snowflake INSERT has no ON CONFLICT clause.
     assert_raise ArgumentError,
-                 ":conflict_target is not supported in insert/insert_all by Snowflake",
+                 ~r/:on_conflict is not supported by Snowflake.*MERGE/,
                  fn ->
-                   insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], [:x]}, [])
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {:nothing, [], []}, [])
                  end
 
+    # :on_conflict with a list of replace fields must raise.
     assert_raise ArgumentError,
-                 "Using a query with :where in combination with the :on_conflict option is not supported by Snowflake",
+                 ~r/:on_conflict is not supported by Snowflake.*MERGE/,
+                 fn ->
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], []}, [])
+                 end
+
+    # :on_conflict with an update query (no where) must raise.
+    assert_raise ArgumentError,
+                 ~r/:on_conflict is not supported by Snowflake.*MERGE/,
+                 fn ->
+                   update = from("schema", update: [set: [z: "foo"]]) |> plan(:update_all)
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
+                 end
+
+    # :on_conflict with an update query that has a where must raise.
+    assert_raise ArgumentError,
+                 ~r/:on_conflict is not supported by Snowflake.*MERGE/,
                  fn ->
                    update =
                      from("schema", update: [set: [x: ^"foo"]], where: [z: "bar"])
                      |> plan(:update_all)
 
                    insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
+                 end
+
+    # :conflict_target is still rejected with its existing message.
+    assert_raise ArgumentError,
+                 ":conflict_target is not supported in insert/insert_all by Snowflake",
+                 fn ->
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], [:x]}, [])
                  end
   end
 
