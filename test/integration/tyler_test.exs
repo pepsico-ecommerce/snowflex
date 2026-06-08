@@ -97,5 +97,22 @@ defmodule TylerTest do
       assert Jason.decode!(written_ages) == ages
       assert Jason.decode!(written_things) == things
     end
+
+    test "read array values from Snowflake", %{id: id} do
+      names = ["Alice", "Bob"]
+      ages = [7, 45, 99]
+      things = [%{"color" => "red"}, %{"amount" => 10.5}]
+
+      Http.query!("""
+      INSERT INTO SNOWFLEX_TEST_ARRAY_SCHEMA (id, names, ages, things)
+      SELECT '#{id}',
+             PARSE_JSON('#{Jason.encode!(names)}'),
+             PARSE_JSON('#{Jason.encode!(ages)}'),
+             PARSE_JSON('#{Jason.encode!(things)}');
+      """)
+
+      assert %SnowflexTestArraySchema{names: ^names, ages: ^ages, things: ^things} =
+               Http.get(SnowflexTestArraySchema, id)
+    end
   end
 end
