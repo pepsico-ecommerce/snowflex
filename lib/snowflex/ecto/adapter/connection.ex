@@ -179,8 +179,9 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   @impl Ecto.Adapters.SQL.Connection
   def insert(prefix, table, header, rows, on_conflict, returning, placeholders, opts \\ [])
 
-  def insert(prefix, table, header, rows, on_conflict, [], [], _opts) do
+  def insert(prefix, table, header, rows, on_conflict, [], [], opts) do
     fields = quote_names(header)
+    json_fields = Keyword.get(opts, :json_fields, [])
 
     [
       "INSERT INTO ",
@@ -188,7 +189,7 @@ defmodule Snowflex.Ecto.Adapter.Connection do
       " (",
       fields,
       ") ",
-      insert_all(rows) | on_conflict(on_conflict, header)
+      insert_all(rows, header, json_fields) | on_conflict(on_conflict, header)
     ]
   end
 
@@ -216,7 +217,9 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     )
   end
 
-  defp insert_all(rows) when is_list(rows) do
+  defp insert_all(rows, header, json_fields)
+
+  defp insert_all(rows, _header, []) when is_list(rows) do
     [
       "VALUES ",
       intersperse_map(rows, ?,, fn row ->
@@ -225,13 +228,36 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     ]
   end
 
-  defp insert_all(%Ecto.Query{} = query) do
+  defp insert_all(rows, header, json_fields) when is_list(rows) do
+    intersperse_map(rows, " UNION ALL ", fn row ->
+      [
+        "SELECT ",
+        row
+        |> Enum.zip(header)
+        |> intersperse_map(?,, fn {value, field} ->
+          insert_all_select_value(value, field, json_fields)
+        end)
+      ]
+    end)
+  end
+
+  defp insert_all(%Ecto.Query{} = query, _header, _json_fields) do
     [?(, all(query), ?)]
   end
 
   defp insert_all_value(nil), do: "DEFAULT"
   defp insert_all_value({%Ecto.Query{} = query, _params_counter}), do: [?(, all(query), ?)]
   defp insert_all_value(_), do: "?"
+
+  defp insert_all_select_value(nil, _field, _json_fields), do: "NULL"
+
+  defp insert_all_select_value({%Ecto.Query{} = query, _params_counter}, _field, _json_fields) do
+    [?(, all(query), ?)]
+  end
+
+  defp insert_all_select_value(_value, field, json_fields) do
+    if field in json_fields, do: "PARSE_JSON(?)", else: "?"
+  end
 
   @impl Ecto.Adapters.SQL.Connection
   def update(prefix, table, fields, filters, _returning) do
