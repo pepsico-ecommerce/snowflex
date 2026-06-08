@@ -60,12 +60,14 @@ defmodule Snowflex do
   def loaders(:time_usec, type), do: [&time_decode/1, type]
   def loaders(:map, type), do: [&json_decode/1, type]
   def loaders({:map, _}, type), do: [&json_decode/1, type]
+  def loaders({:array, _}, type), do: [&json_decode/1, type]
   def loaders(_, type), do: [type]
 
   @impl Ecto.Adapter
   def dumpers(:binary, type), do: [type, &binary_encode/1]
-  def dumpers(:map, type), do: [type, &json_encode/1]
-  def dumpers({:map, _}, type), do: [type, &json_encode/1]
+  def dumpers(:map, _type), do: [&json_encode/1]
+  def dumpers({:map, _}, _type), do: [&json_encode/1]
+  def dumpers({:array, _}, _type), do: [&json_encode/1]
   def dumpers(_, type), do: [type]
 
   defp binary_encode(raw), do: {:ok, Base.encode16(raw)}
@@ -208,6 +210,7 @@ defmodule Snowflex do
       case schema.__schema__(:type, field) do
         :map -> true
         {:map, _} -> true
+        {:array, _} -> true
         _other -> false
       end
     end)
