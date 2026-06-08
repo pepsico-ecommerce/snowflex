@@ -58,6 +58,8 @@ defmodule Snowflex do
   def loaders(:id, type), do: [&int_decode/1, type]
   def loaders(:time, type), do: [&time_decode/1, type]
   def loaders(:time_usec, type), do: [&time_decode/1, type]
+  def loaders(:map, type), do: [&json_decode/1, type]
+  def loaders({:map, _}, type), do: [&json_decode/1, type]
   def loaders(_, type), do: [type]
 
   @impl Ecto.Adapter
@@ -70,6 +72,10 @@ defmodule Snowflex do
 
   defp json_encode(nil), do: {:ok, nil}
   defp json_encode(value), do: {:ok, Jason.encode!(value)}
+
+  defp json_decode(nil), do: {:ok, nil}
+  defp json_decode(value) when is_binary(value), do: Jason.decode(value)
+  defp json_decode(value), do: {:ok, value}
 
   defp decimal_decode(nil), do: {:ok, nil}
   defp decimal_decode(dec) when is_binary(dec), do: {:ok, Decimal.new(dec)}
