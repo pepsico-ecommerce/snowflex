@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Enhancements
 
-- Support routing Snowflake REST requests at a dedicated Finch pool. When a `:finch` instance is supplied via `:req_options`, `Snowflex.Transport.Http` now omits `:connect_options` so Req does not reject the request for setting both `:finch` and `:connect_options`. This lets callers point a warehouse at an explicitly-sized, isolated Finch pool.
+- Support routing Snowflake REST requests at a dedicated Finch pool. When a `:finch` instance is supplied via `:req_options`, `Snowflex.Transport.Http` now omits `:connect_options` so Req does not reject the request for setting both `:finch` and `:connect_options`. This lets callers point a warehouse at an explicitly-sized, isolated Finch pool. ([#174](https://github.com/pepsico-ecommerce/snowflex/pull/174))
+
+### Changed
+
+- Relax `ecto` and `ecto_sql` requirements from `~> 3.14` to `~> 3.13` so consumers can stay on the 3.13 series.
 
 ## [1.3.0] - 2026-06-08
 

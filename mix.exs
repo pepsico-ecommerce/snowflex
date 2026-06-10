@@ -2,7 +2,7 @@ defmodule Snowflex.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/pepsico-ecommerce/snowflex"
-  @version "1.3.0"
+  @version "1.3.1"
 
   def project do
     [
@@ -63,8 +63,8 @@ defmodule Snowflex.MixProject do
     [
       {:backoff, "~> 1.1.6"},
       # Ecto/DBConnection
-      {:ecto, "~> 3.14"},
-      {:ecto_sql, "~> 3.14"},
+      {:ecto, "~> 3.13"},
+      {:ecto_sql, "~> 3.13"},
       {:db_connection, "~> 2.4"},
       # HTTP
       {:req, "~> 0.5"},
