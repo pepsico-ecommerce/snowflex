@@ -298,11 +298,52 @@ defmodule Snowflex.Ecto.Adapter.ConnectionTest do
     assert all(query) == ~s{SELECT count(*)::number FROM schema AS s0}
   end
 
-  test "aggregate filters" do
+  test "aggregate filters - count with field" do
     query = TestSchema |> select([r], count(r.x) |> filter(r.x > 10)) |> plan()
+    assert all(query) == ~s{SELECT count(CASE WHEN s0.x > 10 THEN s0.x END) FROM schema AS s0}
+  end
+
+  test "aggregate filters - count(*) uses COUNT_IF" do
+    query = TestSchema |> select([r], count() |> filter(r.x > 10)) |> plan()
+    assert all(query) == ~s{SELECT COUNT_IF(s0.x > 10) FROM schema AS s0}
+  end
+
+  test "aggregate filters - sum" do
+    query = TestSchema |> select([r], sum(r.x) |> filter(r.x > 10)) |> plan()
+    assert all(query) == ~s{SELECT sum(CASE WHEN s0.x > 10 THEN s0.x END) FROM schema AS s0}
+  end
+
+  test "aggregate filters - avg" do
+    query = TestSchema |> select([r], avg(r.x) |> filter(r.x > 10)) |> plan()
+    assert all(query) == ~s{SELECT avg(CASE WHEN s0.x > 10 THEN s0.x END) FROM schema AS s0}
+  end
+
+  test "aggregate filters - min" do
+    query = TestSchema |> select([r], min(r.x) |> filter(r.x > 10)) |> plan()
+    assert all(query) == ~s{SELECT min(CASE WHEN s0.x > 10 THEN s0.x END) FROM schema AS s0}
+  end
+
+  test "aggregate filters - max" do
+    query = TestSchema |> select([r], max(r.x) |> filter(r.x > 10)) |> plan()
+    assert all(query) == ~s{SELECT max(CASE WHEN s0.x > 10 THEN s0.x END) FROM schema AS s0}
+  end
+
+  test "aggregate filters - compound condition" do
+    query =
+      TestSchema |> select([r], count(r.x) |> filter(r.x > 0 and r.y < 100)) |> plan()
+
+    assert all(query) ==
+             ~s{SELECT count(CASE WHEN (s0.x > 0) AND (s0.y < 100) THEN s0.x END) FROM schema AS s0}
+  end
+
+  test "aggregate filters - unsupported aggregate raises" do
+    query =
+      TestSchema
+      |> select([r], fragment("bad_agg(?)", r.x) |> filter(r.x > 10))
+      |> plan()
 
     assert_raise Ecto.QueryError,
-                 ~r/Snowflake adapter does not support aggregate filters in query/,
+                 ~r/Snowflake adapter does not support filter\(\) on this aggregate/,
                  fn ->
                    all(query)
                  end
@@ -1242,37 +1283,49 @@ defmodule Snowflex.Ecto.Adapter.ConnectionTest do
                  end
   end
 
-  test "insert with on duplicate key" do
-    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {:nothing, [], []}, [])
+  test "insert with on_conflict" do
+    # :on_conflict :raise is the only supported mode — it emits no extra SQL.
+    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {:raise, [], []}, [])
+    assert query == ~s{INSERT INTO schema (x,y) VALUES (?,?)}
 
-    assert query ==
-             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE x = x}
-
-    update = from("schema", update: [set: [z: "foo"]]) |> plan(:update_all)
-    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
-
-    assert query ==
-             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE z = 'foo'}
-
-    query = insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], []}, [])
-
-    assert query ==
-             ~s{INSERT INTO schema (x,y) VALUES (?,?) ON DUPLICATE KEY UPDATE x = VALUES(x),y = VALUES(y)}
-
+    # :on_conflict :nothing must raise — Snowflake INSERT has no ON CONFLICT clause.
     assert_raise ArgumentError,
-                 ":conflict_target is not supported in insert/insert_all by Snowflake",
+                 ~r/:on_conflict is not supported by Snowflake.*MERGE/,
                  fn ->
-                   insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], [:x]}, [])
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {:nothing, [], []}, [])
                  end
 
+    # :on_conflict with a list of replace fields must raise.
     assert_raise ArgumentError,
-                 "Using a query with :where in combination with the :on_conflict option is not supported by Snowflake",
+                 ~r/:on_conflict is not supported by Snowflake.*MERGE/,
+                 fn ->
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], []}, [])
+                 end
+
+    # :on_conflict with an update query (no where) must raise.
+    assert_raise ArgumentError,
+                 ~r/:on_conflict is not supported by Snowflake.*MERGE/,
+                 fn ->
+                   update = from("schema", update: [set: [z: "foo"]]) |> plan(:update_all)
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
+                 end
+
+    # :on_conflict with an update query that has a where must raise.
+    assert_raise ArgumentError,
+                 ~r/:on_conflict is not supported by Snowflake.*MERGE/,
                  fn ->
                    update =
                      from("schema", update: [set: [x: ^"foo"]], where: [z: "bar"])
                      |> plan(:update_all)
 
                    insert(nil, "schema", [:x, :y], [[:x, :y]], {update, [], []}, [])
+                 end
+
+    # :conflict_target is still rejected with its existing message.
+    assert_raise ArgumentError,
+                 ":conflict_target is not supported in insert/insert_all by Snowflake",
+                 fn ->
+                   insert(nil, "schema", [:x, :y], [[:x, :y]], {[:x, :y], [], [:x]}, [])
                  end
   end
 

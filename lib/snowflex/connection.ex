@@ -9,8 +9,6 @@ defmodule Snowflex.Connection do
   alias Snowflex.Result
   alias Snowflex.Transport.Http
 
-  require Logger
-
   @type t :: %__MODULE__{
           pid: pid(),
           transport: any(),

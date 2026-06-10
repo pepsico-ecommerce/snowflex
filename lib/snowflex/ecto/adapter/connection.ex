@@ -177,7 +177,9 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   end
 
   @impl Ecto.Adapters.SQL.Connection
-  def insert(prefix, table, header, rows, on_conflict, [], []) do
+  def insert(prefix, table, header, rows, on_conflict, returning, placeholders, opts \\ [])
+
+  def insert(prefix, table, header, rows, on_conflict, [], [], _opts) do
     fields = quote_names(header)
 
     [
@@ -190,11 +192,11 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     ]
   end
 
-  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, []) do
+  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, [], _opts) do
     error!(nil, ":returning is not supported in insert/insert_all by Snowflake")
   end
 
-  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, _placeholders) do
+  def insert(_prefix, _table, _header, _rows, _on_conflict, _returning, _placeholders, _opts) do
     error!(nil, ":placeholders is not supported by Snowflake")
   end
 
@@ -206,29 +208,11 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     []
   end
 
-  defp on_conflict({:nothing, _, []}, [field | _]) do
-    quoted = quote_name(field)
-    [" ON DUPLICATE KEY UPDATE ", quoted, " = " | quoted]
-  end
-
-  defp on_conflict({fields, _, []}, _header) when is_list(fields) do
-    [
-      " ON DUPLICATE KEY UPDATE "
-      | intersperse_map(fields, ?,, fn field ->
-          quoted = quote_name(field)
-          [quoted, " = VALUES(", quoted, ?)]
-        end)
-    ]
-  end
-
-  defp on_conflict({%{wheres: []} = query, _, []}, _header) do
-    [" ON DUPLICATE KEY " | update_all(query, "UPDATE ")]
-  end
-
-  defp on_conflict({_query, _, []}, _header) do
+  defp on_conflict({_, _, []}, _header) do
     error!(
       nil,
-      "Using a query with :where in combination with the :on_conflict option is not supported by Snowflake"
+      ":on_conflict is not supported by Snowflake's INSERT statement. " <>
+        "Use a MERGE INTO statement via raw SQL for upserts."
     )
   end
 
@@ -314,32 +298,6 @@ defmodule Snowflex.Ecto.Adapter.Connection do
 
   defp select(%{select: %{fields: fields}} = query, select_distinct, sources) do
     ["SELECT", select_distinct, ?\s | select_fields(fields, sources, query)]
-  end
-
-  defp select([], _sources, _query),
-    do: "TRUE"
-
-  defp select(fields, sources, query) do
-    intersperse_map(fields, ", ", fn
-      {:&, _, [idx]} ->
-        case elem(sources, idx) do
-          {source, _, nil} ->
-            error!(
-              query,
-              "Snowflake does not support selecting all fields from #{source} without a schema. " <>
-                "Please specify a schema or specify exactly which fields you want to select"
-            )
-
-          {_, source, _} ->
-            source
-        end
-
-      {key, value} ->
-        [expr(value, sources, query), " AS ", quote_name(key)]
-
-      value ->
-        expr(value, sources, query)
-    end)
   end
 
   defp select_fields([], _sources, _query),
@@ -720,8 +678,24 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     ["NOT (", expr(expr, sources, query), ?)]
   end
 
+  defp expr({:filter, _, [{:count, _, []}, cond]}, sources, query) do
+    ["COUNT_IF(", expr(cond, sources, query), ")"]
+  end
+
+  defp expr({:filter, _, [{agg, _, [arg]}, cond]}, sources, query)
+       when agg in [:count, :sum, :avg, :min, :max] do
+    [
+      Atom.to_string(agg),
+      "(CASE WHEN ",
+      expr(cond, sources, query),
+      " THEN ",
+      expr(arg, sources, query),
+      " END)"
+    ]
+  end
+
   defp expr({:filter, _, _}, _sources, query) do
-    error!(query, "Snowflake adapter does not support aggregate filters")
+    error!(query, "Snowflake adapter does not support filter() on this aggregate")
   end
 
   defp expr(%Ecto.SubQuery{query: query}, sources, parent_query) do
@@ -982,15 +956,12 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   defp ecto_cast_to_db(type, query), do: ecto_to_db(type, query)
 
   defp ecto_to_db({:array, _}, _query), do: "array"
-
-  defp ecto_to_db(:id, _query), do: "number"
   defp ecto_to_db(:serial, query), do: error!(query, "SERIAL is not supported by Snowflake")
 
   defp ecto_to_db(:bigserial, query),
     do: error!(query, "BIGSERIAL is not supported by snowflake")
 
   defp ecto_to_db(:binary_id, _query), do: "varchar"
-  defp ecto_to_db(:string, _query), do: "varchar"
   defp ecto_to_db(:float, _query), do: "number"
   defp ecto_to_db(:binary, _query), do: "varchar"
   # Snowflake does not support uuid
@@ -999,9 +970,7 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   defp ecto_to_db({:map, _}, _query), do: "variant"
   defp ecto_to_db(:time_usec, _query), do: "time"
   defp ecto_to_db(:utc_datetime, _query), do: "datetime"
-  defp ecto_to_db(:utc_datetime_usec, _query), do: "datetime"
   defp ecto_to_db(:naive_datetime, _query), do: "datetime"
-  defp ecto_to_db(:naive_datetime_usec, _query), do: "datetime"
   defp ecto_to_db(atom, _query) when is_atom(atom), do: Atom.to_string(atom)
 
   defp ecto_to_db(type, _query) do

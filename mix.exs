@@ -9,23 +9,15 @@ defmodule Snowflex.MixProject do
       app: :snowflex,
       name: "Snowflex",
       version: @version,
-      elixir: "~> 1.14",
+      elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
-      dialyzer: [
-        plt_add_apps: [:ex_unit, :mix, :credo, :earmark],
-        list_unused_filters: true,
-        flags: [
-          :no_opaque,
-          :unknown,
-          :unmatched_returns,
-          :extra_return,
-          :missing_return,
-          :error_handling
-        ],
-        plt_file: {:no_warn, "priv/plts/project.plt"},
-        plt_core_path: "priv/plts/core.plt"
+      assay: [
+        dialyzer: [
+          apps: [:project_plus_deps, :ex_unit, :mix],
+          warning_apps: :project
+        ]
       ],
       test_coverage: [tool: ExCoveralls],
       docs: docs(),
@@ -71,8 +63,8 @@ defmodule Snowflex.MixProject do
     [
       {:backoff, "~> 1.1.6"},
       # Ecto/DBConnection
-      {:ecto, "~> 3.12"},
-      {:ecto_sql, "~> 3.12"},
+      {:ecto, "~> 3.14"},
+      {:ecto_sql, "~> 3.14"},
       {:db_connection, "~> 2.4"},
       # HTTP
       {:req, "~> 0.5"},
@@ -80,11 +72,10 @@ defmodule Snowflex.MixProject do
       {:jose, "~> 1.11"},
       {:jason, "~> 1.0"},
       # Linting
-      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
+      {:assay, "~> 0.5", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: :dev, runtime: false},
-      {:ex_check, "~> 0.12", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.13", only: :test},
-      {:doctor, "~> 0.22.0", only: :dev},
+      {:doctor, "~> 0.23.0", only: :dev},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       # Documentation
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},

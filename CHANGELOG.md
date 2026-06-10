@@ -5,11 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2026-06-10
+## [1.3.1] - 2026-06-10
 
 ### Enhancements
 
 - Support routing Snowflake REST requests at a dedicated Finch pool. When a `:finch` instance is supplied via `:req_options`, `Snowflex.Transport.Http` now omits `:connect_options` so Req does not reject the request for setting both `:finch` and `:connect_options`. This lets callers point a warehouse at an explicitly-sized, isolated Finch pool.
+
+## [1.3.0] - 2026-06-08
+
+### Enhancements
+
+- Implement aggregate `filter()` via CASE WHEN translation ([#168](https://github.com/pepsico-ecommerce/snowflex/pull/168))
+  - `count(x) |> filter(cond)`, `sum`, `avg`, `min`, `max` translate to `agg(CASE WHEN cond THEN x END)`
+  - `count() |> filter(cond)` (COUNT(*)) maps to Snowflake's `COUNT_IF(cond)`
+
+### Bug Fixes
+
+- Raise a clear `ArgumentError` for unsupported `on_conflict` modes (`:nothing`, field list, update query) pointing users toward `MERGE INTO` ([#167](https://github.com/pepsico-ecommerce/snowflex/pull/167))
+
+### Changed
+
+- Bump minimum Elixir version to 1.15 ([#163](https://github.com/pepsico-ecommerce/snowflex/pull/163))
+- Replace ex_check + dialyxir with assay for CI ([#166](https://github.com/pepsico-ecommerce/snowflex/pull/166))
+- Bump ecto_sql and doctor, enabling plug and decimal upgrades to avoid CVE versions ([#165](https://github.com/pepsico-ecommerce/snowflex/pull/165))
+- Bump req from 0.5.x to 0.6.0 ([#169](https://github.com/pepsico-ecommerce/snowflex/pull/169))
+- Bump jose from 1.11.10 to 1.11.12 ([#128](https://github.com/pepsico-ecommerce/snowflex/pull/128))
+- Bump ecto from 3.13.5 to 3.13.6 ([#153](https://github.com/pepsico-ecommerce/snowflex/pull/153))
+- Bump ecto_sql from 3.13.4 to 3.13.5 ([#147](https://github.com/pepsico-ecommerce/snowflex/pull/147))
+- Bump jason from 1.4.4 to 1.4.5 ([#157](https://github.com/pepsico-ecommerce/snowflex/pull/157))
+- Bump telemetry from 1.3.0 to 1.4.1 ([#148](https://github.com/pepsico-ecommerce/snowflex/pull/148))
+- Bump assay from 0.5.2 to 0.6.1 ([#170](https://github.com/pepsico-ecommerce/snowflex/pull/170))
+- Bump credo from 1.7.16 to 1.7.19 ([#149](https://github.com/pepsico-ecommerce/snowflex/pull/149), [#151](https://github.com/pepsico-ecommerce/snowflex/pull/151), [#171](https://github.com/pepsico-ecommerce/snowflex/pull/171))
+- Bump ex_doc from 0.40.0 to 0.40.3 ([#142](https://github.com/pepsico-ecommerce/snowflex/pull/142), [#159](https://github.com/pepsico-ecommerce/snowflex/pull/159))
 
 ## [1.2.1] - 2026-02-27
 
