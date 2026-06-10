@@ -26,8 +26,8 @@ defmodule Snowflex.Transport.Http do
   * `:max_retries` - Maximum retry attempts for rate limits (default: 3)
   * `:retry_base_delay` - Base delay for exponential backoff in milliseconds (default: 1000)
   * `:retry_max_delay` - Maximum delay between retries in milliseconds (default: 8000)
-  * `:connect_options` - Connection options for Finch pool configuration
-  * `:req_options` - Additional options to pass to `Req.new/1` (e.g., `:plug` for testing)
+  * `:connect_options` - Connection options for Finch pool configuration. Ignored when a `:finch` instance is supplied via `:req_options`, because Req forbids setting both.
+  * `:req_options` - Additional options to pass to `Req.new/1` (e.g., `:plug` for testing, or `:finch` to route requests at a dedicated Finch pool)
 
   ## Account Name Handling
 
@@ -232,10 +232,12 @@ defmodule Snowflex.Transport.Http do
   To keep Snowflex's internal Req usage simpler, we do *not* support the full gamut of options that `Req` does,
   only the subset we rely upon.  Your use case might necessitate changing/modifying/adding other options however.
 
-  For example, if you want to specify a different `Finch` pool to use, you currently can't, because `Http` sets the
-  `connection_options` for Req.  `Req` does not allow specifying `connection_options` AND `finch` at the same time.
+  To route Snowflake requests at a dedicated `Finch` pool, pass it via `:req_options`, e.g.
+  `req_options: [finch: MyFinch]`. When a `:finch` instance is provided this way, `Http` omits
+  `:connect_options` so the two do not conflict (`Req` does not allow specifying `:connect_options`
+  and `:finch` at the same time); the Finch pool then owns the connection configuration.
 
-  We can use `options/1` to get the current options, and then modify them as needed:
+  `options/1` remains available when you need to build the Req client yourself and modify it further:
 
   ## Example:
   ```elixir
@@ -632,11 +634,24 @@ defmodule Snowflex.Transport.Http do
       retry_delay: fn attempt ->
         calculate_backoff_delay(attempt, state.retry_base_delay, state.retry_max_delay)
       end,
-      max_retries: state.max_retries,
-      connect_options: state.connect_options
+      max_retries: state.max_retries
     ]
 
-    Keyword.merge(base_options, state.req_options)
+    base_options
+    |> maybe_put_connect_options(state)
+    |> Keyword.merge(state.req_options)
+  end
+
+  # Req raises if both `:finch` and `:connect_options` are set. When the caller
+  # supplies a `:finch` instance through `:req_options` (to route requests at a
+  # dedicated, explicitly-sized Finch pool), omit `:connect_options` and let the
+  # pool own its connection configuration.
+  defp maybe_put_connect_options(options, %State{req_options: req_options} = state) do
+    if Keyword.has_key?(req_options, :finch) do
+      options
+    else
+      Keyword.put(options, :connect_options, state.connect_options)
+    end
   end
 
   defp build_req_client(state) do

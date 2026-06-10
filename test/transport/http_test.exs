@@ -268,4 +268,30 @@ defmodule Snowflex.Transport.HttpTest do
       end
     end
   end
+
+  describe "options/1 Finch pool selection" do
+    @private_key_opts @base_opts ++ [private_key_from_string: @test_private_key]
+
+    test "omits :connect_options when a :finch instance is supplied via :req_options" do
+      opts = @private_key_opts ++ [req_options: [finch: MyApp.Finch.Snowflake]]
+
+      assert {:ok, built} = Http.options(opts)
+      refute Keyword.has_key?(built, :connect_options)
+      assert Keyword.get(built, :finch) == MyApp.Finch.Snowflake
+    end
+
+    test "keeps :connect_options when no :finch instance is supplied" do
+      opts = @private_key_opts ++ [connect_options: [timeout: 1_000]]
+
+      assert {:ok, built} = Http.options(opts)
+      assert Keyword.get(built, :connect_options) == [timeout: 1_000]
+      refute Keyword.has_key?(built, :finch)
+    end
+
+    test "includes the default (empty) :connect_options when neither is supplied" do
+      assert {:ok, built} = Http.options(@private_key_opts)
+      assert Keyword.get(built, :connect_options) == []
+      refute Keyword.has_key?(built, :finch)
+    end
+  end
 end
