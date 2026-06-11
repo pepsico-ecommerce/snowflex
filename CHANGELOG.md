@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug Fixes
 
-- Recycle pool workers when their HTTP transport process dies. `Snowflex.Connection` now returns `{:disconnect, ...}` from `handle_execute/4`, `handle_declare/4`, and `handle_fetch/4` when the transport pid is no longer alive, so DBConnection replaces the worker instead of holding a stale pid that fails every subsequent query with `:noproc`.
+- Recycle pool workers when their HTTP transport process dies. `Snowflex.Connection.connect/1` no longer calls `Process.flag(:trap_exit, true)`, so the link from worker → transport propagates death normally: when the transport crashes, the worker dies with it, the DBConnection pool starts a replacement, and the next query lands on a fresh transport instead of looping forever on `{:noproc, ...}` against a stale pid.
 
 ## [1.3.1] - 2026-06-10
 

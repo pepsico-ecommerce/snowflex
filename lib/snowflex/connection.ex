@@ -21,7 +21,6 @@ defmodule Snowflex.Connection do
 
   @impl DBConnection
   def connect(opts) do
-    Process.flag(:trap_exit, true)
     transport = Keyword.get(opts, :transport, Http)
 
     case transport.start_link(opts) do
@@ -73,17 +72,17 @@ defmodule Snowflex.Connection do
   end
 
   @impl DBConnection
-  def handle_execute(query, params, opts, %{transport: transport, pid: pid} = state) do
+  def handle_execute(query, params, opts, %{transport: transport} = state) do
     # Set base metadata at the start so it's available even if DBConnection times out
     set_base_metadata(state, query)
 
-    case transport.execute_statement(pid, query.statement, params, opts) do
+    case transport.execute_statement(state.pid, query.statement, params, opts) do
       {:ok, result} ->
         {:ok, query, result, state}
 
       {:error, reason} ->
         enrich_logger_metadata_from_error(reason)
-        classify_transport_error(state, reason)
+        {:error, reason, state}
     end
   end
 
@@ -93,17 +92,17 @@ defmodule Snowflex.Connection do
   end
 
   @impl DBConnection
-  def handle_declare(query, params, opts, %{transport: transport, pid: pid} = state) do
+  def handle_declare(query, params, opts, %{transport: transport} = state) do
     # Set base metadata at the start so it's available even if DBConnection times out
     set_base_metadata(state, query)
 
-    case transport.declare(pid, query.statement, params, opts) do
+    case transport.declare(state.pid, query.statement, params, opts) do
       {:ok, cursor} ->
         {:ok, query, cursor, state}
 
       {:error, reason} ->
         enrich_logger_metadata_from_error(reason)
-        classify_transport_error(state, reason)
+        {:error, reason, state}
     end
   end
 
@@ -114,11 +113,11 @@ defmodule Snowflex.Connection do
   end
 
   @impl DBConnection
-  def handle_fetch(query, cursor, opts, %{transport: transport, pid: pid} = state) do
+  def handle_fetch(query, cursor, opts, %{transport: transport} = state) do
     # Set base metadata at the start so it's available even if DBConnection times out
     set_base_metadata(state, query)
 
-    case transport.fetch(pid, cursor, opts) do
+    case transport.fetch(state.pid, cursor, opts) do
       {:cont, result} ->
         {:cont, result, query, state}
 
@@ -127,7 +126,7 @@ defmodule Snowflex.Connection do
 
       {:error, reason} ->
         enrich_logger_metadata_from_error(reason)
-        classify_transport_error(state, reason)
+        {:error, reason, state}
     end
   end
 
@@ -153,18 +152,6 @@ defmodule Snowflex.Connection do
   end
 
   ## Helpers
-
-  # If the transport process died (typically observed as a :noproc-style exit
-  # bubbling up through GenServer.call), return :disconnect so DBConnection
-  # recycles the worker. Otherwise propagate the error normally so it stays a
-  # query-level failure.
-  defp classify_transport_error(%{pid: pid} = state, reason) do
-    if Process.alive?(pid) do
-      {:error, reason, state}
-    else
-      {:disconnect, reason, state}
-    end
-  end
 
   defp set_base_metadata(state) do
     set_base_metadata(state, %{})
