@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Bug Fixes
+
+- Recycle pool workers when their HTTP transport process dies. `Snowflex.Connection` now returns `{:disconnect, ...}` from `handle_execute/4`, `handle_declare/4`, and `handle_fetch/4` when the transport pid is no longer alive, so DBConnection replaces the worker instead of holding a stale pid that fails every subsequent query with `:noproc`.
+
 ## [1.3.1] - 2026-06-10
 
 ### Enhancements
