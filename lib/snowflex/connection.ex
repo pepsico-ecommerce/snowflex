@@ -21,7 +21,6 @@ defmodule Snowflex.Connection do
 
   @impl DBConnection
   def connect(opts) do
-    Process.flag(:trap_exit, true)
     transport = Keyword.get(opts, :transport, Http)
 
     case transport.start_link(opts) do
