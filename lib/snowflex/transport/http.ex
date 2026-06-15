@@ -630,6 +630,11 @@ defmodule Snowflex.Transport.Http do
         {"User-Agent", "snowflex/#{snowflex_version()}"},
         {"X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT"}
       ],
+      # Snowflake gzips its HTTP responses. Req made automatic decompression
+      # opt-in as of 0.6.1, so request it explicitly — otherwise the response
+      # body arrives as raw gzip bytes and result parsing fails. Callers can
+      # still override this through `req_options`.
+      compressed: true,
       retry: :safe_transient,
       retry_delay: fn attempt ->
         calculate_backoff_delay(attempt, state.retry_base_delay, state.retry_max_delay)
