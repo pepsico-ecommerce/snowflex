@@ -634,7 +634,8 @@ defmodule Snowflex.Transport.Http do
       retry_delay: fn attempt ->
         calculate_backoff_delay(attempt, state.retry_base_delay, state.retry_max_delay)
       end,
-      max_retries: state.max_retries
+      max_retries: state.max_retries,
+      compressed: true
     ]
 
     base_options
