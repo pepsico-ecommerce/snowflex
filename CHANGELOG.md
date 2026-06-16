@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-16
+
+### Enhancements
+
+- Add support for `:map`, `{:map, inner_type}`, and `{:array, inner_type}` Ecto types stored as Snowflake `VARIANT` columns ([#172](https://github.com/pepsico-ecommerce/snowflex/pull/172), [#180](https://github.com/pepsico-ecommerce/snowflex/pull/180)). Values are automatically JSON-encoded via `PARSE_JSON(?)` on insert, update, and update_all, and decoded on read.
+
 ### Bug Fixes
 
 - Recycle pool workers when their HTTP transport process dies. `Snowflex.Connection.connect/1` no longer calls `Process.flag(:trap_exit, true)`, so the link from worker → transport propagates death normally: when the transport crashes, the worker dies with it, the DBConnection pool starts a replacement, and the next query lands on a fresh transport instead of looping forever on `{:noproc, ...}` against a stale pid.
