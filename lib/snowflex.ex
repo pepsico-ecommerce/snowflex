@@ -73,7 +73,7 @@ defmodule Snowflex do
   defp binary_encode(raw), do: {:ok, Base.encode16(raw)}
 
   defp json_encode(nil), do: {:ok, nil}
-  defp json_encode(value), do: {:ok, Jason.encode!(value)}
+  defp json_encode(value), do: Jason.encode(value)
 
   defp json_decode(nil), do: {:ok, nil}
   defp json_decode(value) when is_binary(value), do: Jason.decode(value)

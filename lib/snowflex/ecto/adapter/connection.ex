@@ -219,7 +219,8 @@ defmodule Snowflex.Ecto.Adapter.Connection do
 
   defp insert_all(rows, header, json_fields)
 
-  defp insert_all(rows, _header, []) when is_list(rows) do
+  defp insert_all([], _header, _), do: []
+  defp insert_all([_ | _] = rows, _header, []) do
     [
       "VALUES ",
       intersperse_map(rows, ?,, fn row ->
