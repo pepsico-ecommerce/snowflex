@@ -6,6 +6,7 @@ defmodule Snowflex.Ecto.Adapter.Connection do
 
   alias Ecto.Query.{BooleanExpr, ByExpr, JoinExpr, QueryExpr, WithExpr}
   alias Snowflex.Query
+  alias Snowflex.VariantField
 
   @impl Ecto.Adapters.SQL.Connection
   def child_spec(opts) do
@@ -220,6 +221,7 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   defp insert_all(rows, header, json_fields)
 
   defp insert_all([], _header, _), do: []
+
   defp insert_all([_ | _] = rows, _header, []) do
     [
       "VALUES ",
@@ -261,8 +263,19 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   end
 
   @impl Ecto.Adapters.SQL.Connection
-  def update(prefix, table, fields, filters, _returning) do
-    fields = intersperse_map(fields, ", ", &[quote_name(&1), " = ?"])
+  def update(prefix, table, fields, filters, returning, opts \\ [])
+
+  def update(prefix, table, fields, filters, _returning, opts) do
+    json_fields = Keyword.get(opts, :json_fields, [])
+
+    set_fields =
+      intersperse_map(fields, ", ", fn field ->
+        if field in json_fields do
+          [quote_name(field), " = PARSE_JSON(?)"]
+        else
+          [quote_name(field), " = ?"]
+        end
+      end)
 
     filters =
       intersperse_map(filters, " AND ", fn
@@ -273,7 +286,7 @@ defmodule Snowflex.Ecto.Adapter.Connection do
           [quote_name(field), " = ?"]
       end)
 
-    ["UPDATE ", quote_table(prefix, table), " SET ", fields, " WHERE " | filters]
+    ["UPDATE ", quote_table(prefix, table), " SET ", set_fields, " WHERE " | filters]
   end
 
   @impl Ecto.Adapters.SQL.Connection
@@ -426,16 +439,35 @@ defmodule Snowflex.Ecto.Adapter.Connection do
   end
 
   defp update_fields(type, %{updates: updates} = query, sources) do
+    variant_fields = variant_fields_from_query(query)
+
     fields =
       for(
         %{expr: expr} <- updates,
         {op, kw} <- expr,
         {key, value} <- kw,
-        do: update_op(op, update_key(type, key, query, sources), value, sources, query)
+        do:
+          update_op(
+            op,
+            update_key(type, key, query, sources),
+            value,
+            sources,
+            query,
+            key in variant_fields
+          )
       )
 
     Enum.intersperse(fields, ", ")
   end
+
+  defp variant_fields_from_query(%{from: %{source: {_table, schema}}})
+       when not is_nil(schema) do
+    Enum.filter(schema.__schema__(:fields), fn field ->
+      schema.__schema__(:type, field) |> VariantField.variant_field?()
+    end)
+  end
+
+  defp variant_fields_from_query(_query), do: []
 
   defp update_key(:update, key, %{from: from} = query, sources) do
     {_from, name} = get_source(query, sources, 0, from)
@@ -447,15 +479,19 @@ defmodule Snowflex.Ecto.Adapter.Connection do
     quote_name(key)
   end
 
-  defp update_op(:set, quoted_key, value, sources, query) do
+  defp update_op(:set, quoted_key, value, sources, query, true) do
+    [quoted_key, " = PARSE_JSON(", expr(value, sources, query), ")"]
+  end
+
+  defp update_op(:set, quoted_key, value, sources, query, _not_variant) do
     [quoted_key, " = " | expr(value, sources, query)]
   end
 
-  defp update_op(:inc, quoted_key, value, sources, query) do
+  defp update_op(:inc, quoted_key, value, sources, query, _variant) do
     [quoted_key, " = ", quoted_key, " + " | expr(value, sources, query)]
   end
 
-  defp update_op(command, _quoted_key, _value, _sources, query) do
+  defp update_op(command, _quoted_key, _value, _sources, query, _variant) do
     error!(query, "Unknown update operation #{inspect(command)} for Snowflake")
   end
 
