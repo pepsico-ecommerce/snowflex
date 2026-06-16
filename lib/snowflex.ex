@@ -58,13 +58,26 @@ defmodule Snowflex do
   def loaders(:id, type), do: [&int_decode/1, type]
   def loaders(:time, type), do: [&time_decode/1, type]
   def loaders(:time_usec, type), do: [&time_decode/1, type]
+  def loaders(:map, type), do: [&json_decode/1, type]
+  def loaders({:map, _}, type), do: [&json_decode/1, type]
+  def loaders({:array, _}, type), do: [&json_decode/1, type]
   def loaders(_, type), do: [type]
 
   @impl Ecto.Adapter
   def dumpers(:binary, type), do: [type, &binary_encode/1]
+  def dumpers(:map, _type), do: [&json_encode/1]
+  def dumpers({:map, _}, _type), do: [&json_encode/1]
+  def dumpers({:array, _}, _type), do: [&json_encode/1]
   def dumpers(_, type), do: [type]
 
   defp binary_encode(raw), do: {:ok, Base.encode16(raw)}
+
+  defp json_encode(nil), do: {:ok, nil}
+  defp json_encode(value), do: Jason.encode(value)
+
+  defp json_decode(nil), do: {:ok, nil}
+  defp json_decode(value) when is_binary(value), do: Jason.decode(value)
+  defp json_decode(value), do: {:ok, value}
 
   defp decimal_decode(nil), do: {:ok, nil}
   defp decimal_decode(dec) when is_binary(dec), do: {:ok, Decimal.new(dec)}
@@ -151,6 +164,8 @@ defmodule Snowflex do
         placeholders,
         opts
       ) do
+    opts = Keyword.put_new(opts, :json_fields, json_fields_from_schema_meta(schema_meta))
+
     SQL.insert_all(
       adapter_meta,
       schema_meta,
@@ -169,7 +184,12 @@ defmodule Snowflex do
     %{source: source, prefix: prefix} = schema_meta
     {kind, conflict_params, _} = on_conflict
     {fields, values} = :lists.unzip(params)
-    sql = @conn.insert(prefix, source, fields, [fields], on_conflict, returning, [])
+    json_fields = json_fields_from_schema_meta(schema_meta)
+
+    sql =
+      @conn.insert(prefix, source, fields, [fields], on_conflict, returning, [],
+        json_fields: json_fields
+      )
 
     SQL.struct(
       adapter_meta,
@@ -183,6 +203,17 @@ defmodule Snowflex do
       returning,
       opts
     )
+  end
+
+  defp json_fields_from_schema_meta(%{schema: schema}) do
+    Enum.filter(schema.__schema__(:fields), fn field ->
+      case schema.__schema__(:type, field) do
+        :map -> true
+        {:map, _} -> true
+        {:array, _} -> true
+        _other -> false
+      end
+    end)
   end
 
   @impl Ecto.Adapter.Schema
