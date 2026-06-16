@@ -19,6 +19,7 @@ defmodule Snowflex do
   alias Ecto.UUID
   alias Snowflex.Ecto.Adapter.Stream, as: AdapterStream
   alias Snowflex.Query
+  alias Snowflex.VariantField
   alias String.Chars
 
   require Logger
@@ -205,23 +206,21 @@ defmodule Snowflex do
     )
   end
 
+  defp json_fields_from_schema_meta(%{schema: nil}), do: []
+
   defp json_fields_from_schema_meta(%{schema: schema}) do
     Enum.filter(schema.__schema__(:fields), fn field ->
-      case schema.__schema__(:type, field) do
-        :map -> true
-        {:map, _} -> true
-        {:array, _} -> true
-        _other -> false
-      end
+      schema.__schema__(:type, field) |> VariantField.variant_field?()
     end)
   end
 
   @impl Ecto.Adapter.Schema
   def update(adapter_meta, schema_meta, fields, params, returning, opts) do
     %{source: source, prefix: prefix} = schema_meta
-    {fields, field_values} = :lists.unzip(fields)
+    {field_names, field_values} = :lists.unzip(fields)
     filter_values = Keyword.values(params)
-    sql = @conn.update(prefix, source, fields, params, returning)
+    json_fields = json_fields_from_schema_meta(schema_meta)
+    sql = @conn.update(prefix, source, field_names, params, returning, json_fields: json_fields)
 
     SQL.struct(
       adapter_meta,

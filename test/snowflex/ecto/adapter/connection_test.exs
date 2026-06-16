@@ -22,8 +22,8 @@ defmodule Snowflex.Ecto.Adapter.ConnectionTest do
     IO.iodata_to_binary(SQL.insert(prefx, table, header, rows, on_conflict, returning, []))
   end
 
-  defp update(prefx, table, fields, filter, returning) do
-    IO.iodata_to_binary(SQL.update(prefx, table, fields, filter, returning))
+  defp update(prefx, table, fields, filter, returning, opts \\ []) do
+    IO.iodata_to_binary(SQL.update(prefx, table, fields, filter, returning, opts))
   end
 
   defp delete(prefx, table, filter, returning) do
@@ -888,6 +888,26 @@ defmodule Snowflex.Ecto.Adapter.ConnectionTest do
     assert update_all(query) == ~s{UPDATE first.schema AS s0 SET s0.x = 0}
   end
 
+  test "update_all wraps VARIANT set-fields in PARSE_JSON and leaves plain fields as bare ?" do
+    # TestSchema has field :meta of type :map (VARIANT) and :x of type :integer (plain).
+    # A pinned param {:^, [], [ix]} produces "?" from expr/3. When the field is a VARIANT
+    # type, update_all must emit "PARSE_JSON(?)" instead of bare "?".
+    query =
+      from(m in TestSchema, update: [set: [meta: ^%{"k" => 1}, x: ^42]])
+      |> plan(:update_all)
+
+    sql = update_all(query)
+
+    assert sql =~ "s0.meta = PARSE_JSON(?)",
+           "expected VARIANT field meta to be wrapped in PARSE_JSON(?), got: #{sql}"
+
+    assert sql =~ "s0.x = ?",
+           "expected plain integer field x to be bare ?, got: #{sql}"
+
+    refute sql =~ "s0.x = PARSE_JSON",
+           "plain integer field x must NOT be wrapped in PARSE_JSON, got: #{sql}"
+  end
+
   test "delete all" do
     query = TestSchema |> Queryable.to_query() |> plan()
     assert delete_all(query) == ~s{DELETE  FROM schema AS s0}
@@ -1329,6 +1349,87 @@ defmodule Snowflex.Ecto.Adapter.ConnectionTest do
                  end
   end
 
+  # Characterization test: variant/map/array fields are detected and wrapped in PARSE_JSON(?).
+  # This test MUST stay GREEN through any refactor of json_fields_from_schema_meta/1.
+  describe "variant field detection and PARSE_JSON wrapping" do
+    defp insert_with_json_fields(header, rows, json_fields) do
+      SQL.insert(nil, "variant_schema", header, rows, {:raise, [], []}, [], [],
+        json_fields: json_fields
+      )
+      |> IO.iodata_to_binary()
+    end
+
+    test "non-variant fields use plain ? placeholder" do
+      sql = insert_with_json_fields([:plain_name], [[:plain_name]], [])
+      assert sql == ~s{INSERT INTO variant_schema (plain_name) VALUES (?)}
+    end
+
+    test ":map field is wrapped in PARSE_JSON(?) when listed in json_fields" do
+      sql =
+        insert_with_json_fields(
+          [:plain_name, :map_field],
+          [[:plain_name, :map_field]],
+          [:map_field]
+        )
+
+      assert sql ==
+               ~s{INSERT INTO variant_schema (plain_name,map_field) } <>
+                 ~s{SELECT ?,PARSE_JSON(?)}
+    end
+
+    test "{:map, _} field is wrapped in PARSE_JSON(?) when listed in json_fields" do
+      sql =
+        insert_with_json_fields(
+          [:plain_name, :typed_map_field],
+          [[:plain_name, :typed_map_field]],
+          [:typed_map_field]
+        )
+
+      assert sql ==
+               ~s{INSERT INTO variant_schema (plain_name,typed_map_field) } <>
+                 ~s{SELECT ?,PARSE_JSON(?)}
+    end
+
+    test "{:array, _} field is wrapped in PARSE_JSON(?) when listed in json_fields" do
+      sql =
+        insert_with_json_fields(
+          [:plain_name, :array_field],
+          [[:plain_name, :array_field]],
+          [:array_field]
+        )
+
+      assert sql ==
+               ~s{INSERT INTO variant_schema (plain_name,array_field) } <>
+                 ~s{SELECT ?,PARSE_JSON(?)}
+    end
+
+    test "multiple variant fields in a single insert all get PARSE_JSON(?)" do
+      sql =
+        insert_with_json_fields(
+          [:plain_int, :map_field, :array_field],
+          [[:plain_int, :map_field, :array_field]],
+          [:map_field, :array_field]
+        )
+
+      assert sql ==
+               ~s{INSERT INTO variant_schema (plain_int,map_field,array_field) } <>
+                 ~s{SELECT ?,PARSE_JSON(?),PARSE_JSON(?)}
+    end
+
+    test "variant fields among non-variant fields only wrap the variant ones" do
+      sql =
+        insert_with_json_fields(
+          [:plain_name, :map_field, :plain_int],
+          [[:plain_name, :map_field, :plain_int]],
+          [:map_field]
+        )
+
+      assert sql ==
+               ~s{INSERT INTO variant_schema (plain_name,map_field,plain_int) } <>
+                 ~s{SELECT ?,PARSE_JSON(?),?}
+    end
+  end
+
   test "insert with query" do
     select_query = from("schema", select: [:id]) |> plan(:all)
 
@@ -1363,6 +1464,21 @@ defmodule Snowflex.Ecto.Adapter.ConnectionTest do
 
     query = update("prefix", "schema", [:id], [x: 1, y: nil], [])
     assert query == ~s{UPDATE prefix.schema SET id = ? WHERE x = ? AND y IS NULL}
+  end
+
+  test "update wraps variant set-fields in PARSE_JSON(?)" do
+    query = update(nil, "schema", [:meta, :name], [id: 1], [], json_fields: [:meta])
+    assert query == ~s{UPDATE schema SET meta = PARSE_JSON(?), name = ? WHERE id = ?}
+  end
+
+  test "update without json_fields leaves all set-fields as plain ?" do
+    query = update(nil, "schema", [:id], [x: 1, y: 2], [])
+    assert query == ~s{UPDATE schema SET id = ? WHERE x = ? AND y = ?}
+  end
+
+  test "update with nil filter and variant set-field uses PARSE_JSON(?) and IS NULL" do
+    query = update("prefix", "schema", [:meta], [x: nil], [], json_fields: [:meta])
+    assert query == ~s{UPDATE prefix.schema SET meta = PARSE_JSON(?) WHERE x IS NULL}
   end
 
   test "delete" do
