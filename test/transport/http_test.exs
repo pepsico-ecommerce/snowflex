@@ -299,4 +299,20 @@ defmodule Snowflex.Transport.HttpTest do
       assert Keyword.get(built, :compressed) == true
     end
   end
+
+  describe "options/1 response decompression" do
+    @private_key_opts @base_opts ++ [private_key_from_string: @test_private_key]
+
+    test "requests compressed responses by default" do
+      assert {:ok, built} = Http.options(@private_key_opts)
+      assert Keyword.get(built, :compressed) == true
+    end
+
+    test "lets :req_options override the compressed default" do
+      opts = @private_key_opts ++ [req_options: [compressed: false]]
+
+      assert {:ok, built} = Http.options(opts)
+      assert Keyword.get(built, :compressed) == false
+    end
+  end
 end
