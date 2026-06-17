@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-17
+
+### Bug Fixes
+
+- Enable gzip decompression for Snowflake API responses. Req v0.6.0 flipped the `compressed` option from `true` to `false` by default ([GHSA-655f-mp8p-96gv](https://github.com/wojtekmach/req/security/advisories/GHSA-655f-mp8p-96gv)), causing partition fetches to return raw gzip bytes instead of decoded JSON. `build_options/1` now explicitly sets `compressed: true`. ([#181](https://github.com/pepsico-ecommerce/snowflex/pull/181))
+
 ## [1.4.0] - 2026-06-16
 
 ### Enhancements
