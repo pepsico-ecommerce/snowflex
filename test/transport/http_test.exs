@@ -293,5 +293,10 @@ defmodule Snowflex.Transport.HttpTest do
       assert Keyword.get(built, :connect_options) == []
       refute Keyword.has_key?(built, :finch)
     end
+
+    test "enables compressed (gzip) by default" do
+      assert {:ok, built} = Http.options(@private_key_opts)
+      assert Keyword.get(built, :compressed) == true
+    end
   end
 end
