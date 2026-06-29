@@ -11,5 +11,26 @@
   %{
     file: "lib/snowflex/transport/http.ex",
     message: "Unknown function public_key:pem_entry_decode/2"
+  },
+  # Same :public_key/:crypto OTP export quirk in the fingerprint module
+  %{
+    file: "lib/snowflex/transport/http/key_fingerprint.ex",
+    message: "Unknown function public_key:pem_decode/1"
+  },
+  %{
+    file: "lib/snowflex/transport/http/key_fingerprint.ex",
+    message: "Unknown function public_key:pem_entry_encode/2"
+  },
+  %{
+    file: "lib/snowflex/transport/http/key_fingerprint.ex",
+    message: "Unknown function crypto:hash/2"
+  },
+  %{
+    file: "lib/snowflex/transport/http/key_fingerprint.ex",
+    message: "Unknown function public_key:pem_entry_decode/1"
+  },
+  %{
+    file: "lib/snowflex/transport/http/key_fingerprint.ex",
+    message: "Unknown function public_key:pem_entry_decode/2"
   }
 ]

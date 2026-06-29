@@ -36,7 +36,7 @@ This adapter implements the following Ecto behaviours:
 
 If using the provided `Snowflex.Transport.Http` transport, the only currently supported authentication method is keypair.
 
-In order to obtain the `public_key_fingerprint`, please follow [Snowflake's instructions](https://docs.snowflake.com/en/user-guide/key-pair-auth#verify-the-user-s-public-key-fingerprint).
+You only need to supply your private key — the public-key fingerprint is derived from it automatically. You may still pass `public_key_fingerprint` explicitly if you prefer (see [Snowflake's instructions](https://docs.snowflake.com/en/user-guide/key-pair-auth#verify-the-user-s-public-key-fingerprint) for obtaining it).
 
 ## Configuration
 
@@ -52,10 +52,10 @@ config :my_app, MyApp.Repo,
   # Additional options passed to the transport
   account_name: "your-account",
   username: "your_username",
-  private_key_path: "path/to/key.pem",  # Path to private key file
+  private_key_path: "path/to/key.pem"  # Path to private key file
   # OR alternatively, provide the private key as a string:
   # private_key_from_string: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
-  public_key_fingerprint: "your_fingerprint"
+  # public_key_fingerprint is optional — derived from the private key when omitted.
 ```
 
 You may supply other transports that conform to the `Snowflex.Transport` behaviour.

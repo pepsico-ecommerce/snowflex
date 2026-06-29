@@ -60,8 +60,6 @@ defmodule Snowflex.MockReqResponsesTest do
            account_name: "test_acc",
            username: "test_usr",
            private_key_path: private_key_path,
-           public_key_fingerprint:
-             "4dfd2c71b73c0c5a600c5e96004ca52204dfd74632e8e53738770538f7b8af5c",
            role: "fake_role",
            warehouse: "fake_warehouse",
            req_options: [plug: {Req.Test, MockHttp}]
