@@ -12,9 +12,11 @@ defmodule Snowflex.Transport.Http do
   * `:username` - Your Snowflake username
   * `:private_key_path` - Path to your private key file (PEM format) OR
   * `:private_key_from_string` - Your private key as a string (PEM format)
-  * `:public_key_fingerprint` - Fingerprint of your public key
 
   ### Optional Options
+  * `:public_key_fingerprint` - Fingerprint of your registered public key. When
+    omitted, it is computed automatically from your private key (matching the
+    `RSA_PUBLIC_KEY_FP` Snowflake stores), so you normally do not need to provide it.
   * `:database` - Default database to use
   * `:schema` - Default schema to use
   * `:warehouse` - Default warehouse to use
@@ -45,7 +47,7 @@ defmodule Snowflex.Transport.Http do
   ## Authentication
 
   The transport uses JWT authentication with RSA key pairs. The private key must be in PEM format
-  and the public key fingerprint must be registered with Snowflake.
+  and the public key must be registered with Snowflake.
 
   ## Private Key Configuration
 
@@ -85,7 +87,7 @@ defmodule Snowflex.Transport.Http do
     private_key_path: "/path/to/key.pem",
     # OR alternatively use private_key_from_string instead of private_key_path:
     # private_key_from_string: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
-    public_key_fingerprint: "abc123...",
+    # public_key_fingerprint is optional — derived from the private key when omitted.
     database: "MY_DB",
     schema: "MY_SCHEMA",
     warehouse: "MY_WH",
@@ -106,6 +108,7 @@ defmodule Snowflex.Transport.Http do
   alias JOSE.JWT
   alias Snowflex.Error
   alias Snowflex.Result
+  alias Snowflex.Transport.Http.KeyFingerprint
 
   require Logger
 
@@ -255,7 +258,8 @@ defmodule Snowflex.Transport.Http do
   @spec options(keyword) :: {:ok, keyword} | {:error, term()}
   def options(config) when is_list(config) do
     with {:ok, validated_opts, private_key} <- validate_and_read_private_key(config),
-         {:ok, state} <- init_state(validated_opts, private_key) do
+         {:ok, opts_with_fingerprint} <- resolve_fingerprint(validated_opts, private_key),
+         {:ok, state} <- init_state(opts_with_fingerprint, private_key) do
       {:ok, build_options(state)}
     else
       {:stop, error} -> {:error, error}
@@ -271,7 +275,8 @@ defmodule Snowflex.Transport.Http do
   @impl GenServer
   def init(opts) do
     with {:ok, validated_opts, private_key} <- validate_and_read_private_key(opts),
-         {:ok, state} <- init_state(validated_opts, private_key) do
+         {:ok, opts_with_fingerprint} <- resolve_fingerprint(validated_opts, private_key),
+         {:ok, state} <- init_state(opts_with_fingerprint, private_key) do
       check_connection(state)
     end
   end
@@ -490,7 +495,7 @@ defmodule Snowflex.Transport.Http do
 
   defp validate_required_opts(opts) do
     Enum.reduce_while(
-      [:account_name, :username, :public_key_fingerprint],
+      [:account_name, :username],
       {:ok, opts},
       fn
         key, validated_opts ->
@@ -560,6 +565,35 @@ defmodule Snowflex.Transport.Http do
        connect_options: Keyword.get(validated_opts, :connect_options, []),
        req_options: Keyword.get(validated_opts, :req_options, [])
      }}
+  end
+
+  # Use an explicitly-configured fingerprint when present (backward compatible);
+  # otherwise derive it from the private key so callers no longer need to supply it.
+  defp resolve_fingerprint(validated_opts, private_key) do
+    case fingerprint_for(validated_opts, private_key) do
+      {:ok, fingerprint} ->
+        {:ok, Keyword.put(validated_opts, :public_key_fingerprint, fingerprint)}
+
+      {:error, reason} ->
+        {:stop,
+         %Error{
+           message:
+             "Failed to compute public key fingerprint: #{KeyFingerprint.error_message(reason)}"
+         }}
+    end
+  end
+
+  defp fingerprint_for(validated_opts, private_key) do
+    case Keyword.get(validated_opts, :public_key_fingerprint) do
+      fingerprint when is_binary(fingerprint) and byte_size(fingerprint) > 0 ->
+        {:ok, fingerprint}
+
+      _absent ->
+        KeyFingerprint.fingerprint(
+          private_key,
+          Keyword.get(validated_opts, :private_key_password, ~c"")
+        )
+    end
   end
 
   defp check_connection(state) do

@@ -269,6 +269,77 @@ defmodule Snowflex.Transport.HttpTest do
     end
   end
 
+  describe "public_key_fingerprint is optional" do
+    # Committed throwaway key; fingerprint computed with OpenSSL.
+    @fixture_pem File.read!("test/fixtures/fake_private_key.pem")
+    @fixture_fp "Tf0scbc8DFpgDF6WAEylIgTf10Yy6OU3OHcFOPe4r1w="
+
+    @fp_opts [
+      account_name: "test-account",
+      username: "test_user",
+      private_key_from_string: @fixture_pem
+    ]
+
+    test "computes the fingerprint from the private key when not provided" do
+      assert {:ok, built} = Http.options(@fp_opts)
+      assert iss_from(built) == "TEST-ACCOUNT.TEST_USER.SHA256:#{@fixture_fp}"
+    end
+
+    test "respects an explicitly provided fingerprint (backward compatible)" do
+      opts = @fp_opts ++ [public_key_fingerprint: "explicit-fingerprint-value"]
+
+      assert {:ok, built} = Http.options(opts)
+      assert iss_from(built) == "TEST-ACCOUNT.TEST_USER.SHA256:explicit-fingerprint-value"
+    end
+
+    test "no longer reports public_key_fingerprint as a missing required option" do
+      # account_name is still required, so this surfaces that — never the fingerprint.
+      opts = [username: "test_user", private_key_from_string: @fixture_pem]
+
+      assert {:error, %Error{message: "Missing required option: account_name"}} =
+               Http.options(opts)
+    end
+
+    test "returns an error when the private key cannot be fingerprinted (unsupported key type)" do
+      # A real P-256 EC key — Snowflake keypair auth is RSA only, so auto-derivation
+      # fails and surfaces through the public API as an Error.
+      ec_pem = """
+      -----BEGIN PRIVATE KEY-----
+      MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgzSgMujIQ2WrPZZ5m
+      RoP0jJZGB3+k+ybFkc6Aj0ciC2ahRANCAAT2s0r05jC70ZwAVm29wklYY2RIK2Zb
+      kHqeGxq9V7YXPUYl14/u0Rm3+eZjMpLbIqctuEq1Bj1g48W6QIEp14c+
+      -----END PRIVATE KEY-----
+      """
+
+      opts = [
+        account_name: "test-account",
+        username: "test_user",
+        private_key_from_string: ec_pem
+      ]
+
+      assert {:error, %Error{message: message}} = Http.options(opts)
+
+      assert message =~
+               "Failed to compute public key fingerprint: unsupported key type ECPrivateKey"
+
+      assert message =~ "requires an RSA private key PEM"
+      refute message =~ "<<"
+    end
+
+    # Pull the JWT out of the built Authorization header and decode its `iss` claim.
+    defp iss_from(built_opts) do
+      {"Authorization", "Bearer " <> token} =
+        built_opts |> Keyword.fetch!(:headers) |> List.keyfind("Authorization", 0)
+
+      [_header, payload, _sig] = String.split(token, ".")
+
+      payload
+      |> Base.url_decode64!(padding: false)
+      |> Jason.decode!()
+      |> Map.fetch!("iss")
+    end
+  end
+
   describe "options/1 Finch pool selection" do
     @private_key_opts @base_opts ++ [private_key_from_string: @test_private_key]
 
