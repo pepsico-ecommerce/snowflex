@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-02
+
 ### Enhancements
 
-- `Snowflex.Transport.Http` now derives the public-key fingerprint from your private key automatically, so `:public_key_fingerprint` is no longer required in config. The new `Snowflex.Transport.Http.KeyFingerprint` module computes `base64(sha256(DER SubjectPublicKeyInfo))` (matching Snowflake's `RSA_PUBLIC_KEY_FP`). An explicitly-provided `:public_key_fingerprint` is still honored.
+- `Snowflex.Transport.Http` now derives the public-key fingerprint from your private key automatically, so `:public_key_fingerprint` is no longer required in config. The new `Snowflex.Transport.Http.KeyFingerprint` module computes `base64(sha256(DER SubjectPublicKeyInfo))` (matching Snowflake's `RSA_PUBLIC_KEY_FP`). An explicitly-provided `:public_key_fingerprint` is still honored. ([#184](https://github.com/pepsico-ecommerce/snowflex/pull/184))
 
 ## [1.4.1] - 2026-06-17
 
