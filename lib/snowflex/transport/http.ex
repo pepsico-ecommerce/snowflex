@@ -346,10 +346,14 @@ defmodule Snowflex.Transport.Http do
       when current_partition <= max_partition do
     case fetch_partition(state, current_statement, current_partition, opts) do
       {:ok, result} ->
-        result = format_response_body(result)
-
+        # Partition responses carry only data, so attach the statement's
+        # metadata: columns for consumers and rowType so DBConnection.Query
+        # decoding produces the same typed values as execute.
         result =
-          Map.put(result, :columns, Enum.map(metadata["rowType"], & &1["name"]))
+          result
+          |> format_response_body()
+          |> Map.put(:columns, Enum.map(metadata["rowType"], & &1["name"]))
+          |> Map.put(:metadata, metadata)
 
         {:reply, {:ok, result}, %{state | current_partition: current_partition + 1}}
 

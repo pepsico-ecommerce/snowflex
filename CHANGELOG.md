@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Enhancements
 
-- Add `Snowflex.stream_query/5`, which lazily streams the result of a raw SQL statement one Snowflake partition at a time — only one partition of the result set is held in memory, unlike `Ecto.Repo.stream/2`, which this adapter executes eagerly. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
+- Add `Snowflex.stream_query/5`, which lazily streams the result of a raw SQL statement one Snowflake partition at a time — only one partition of the result set is held in memory, unlike `Ecto.Repo.stream/2`, which this adapter executes eagerly. Streamed partitions carry the statement's `rowType` metadata, so values decode to the same types `execute` produces. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
 
 ### Bug Fixes
 

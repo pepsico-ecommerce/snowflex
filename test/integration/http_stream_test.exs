@@ -22,7 +22,8 @@ defmodule Snowflex.HttpStreamTest do
 
   # Three partitions of one row each; every streamed partition is fetched via
   # GET ?partition=N (partition 0 included — declare discards the inline data).
-  defp partition_data(n), do: [["p#{n}"]]
+  # Values arrive as strings, like the real SQL API sends them.
+  defp partition_data(n), do: [["p#{n}", "#{n}"]]
 
   defp completed_body(handle) do
     %{
@@ -33,7 +34,10 @@ defmodule Snowflex.HttpStreamTest do
           %{"rowCount" => 1},
           %{"rowCount" => 1}
         ],
-        "rowType" => [%{"name" => "N", "type" => "text"}]
+        "rowType" => [
+          %{"name" => "N", "type" => "text"},
+          %{"name" => "CNT", "type" => "fixed", "scale" => 0}
+        ]
       },
       "data" => partition_data(0)
     }
@@ -83,14 +87,15 @@ defmodule Snowflex.HttpStreamTest do
     :ok
   end
 
-  test "stream_query/5 streams one Result per partition" do
+  test "stream_query/5 streams one Result per partition with typed decoding" do
     results =
       Snowflex.stream_query(TestSnowflakeRepo, "SELECT STREAMED", [], [], &Enum.to_list/1)
 
+    # The "fixed" CNT column decodes to an integer, exactly as execute does
     assert [
-             %Result{columns: ["N"], rows: [["p0"]]},
-             %Result{columns: ["N"], rows: [["p1"]]},
-             %Result{columns: ["N"], rows: [["p2"]]},
+             %Result{columns: ["N", "CNT"], rows: [["p0", 0]]},
+             %Result{columns: ["N", "CNT"], rows: [["p1", 1]]},
+             %Result{columns: ["N", "CNT"], rows: [["p2", 2]]},
              %Result{rows: nil}
            ] = results
   end
@@ -103,7 +108,7 @@ defmodule Snowflex.HttpStreamTest do
         |> Enum.to_list()
       end)
 
-    assert rows == [["p0"], ["p1"], ["p2"]]
+    assert rows == [["p0", 0], ["p1", 1], ["p2", 2]]
   end
 
   test "stream_query/5 polls async (202) statements to completion before streaming" do
@@ -114,6 +119,6 @@ defmodule Snowflex.HttpStreamTest do
         |> Enum.to_list()
       end)
 
-    assert rows == [["p0"], ["p1"], ["p2"]]
+    assert rows == [["p0", 0], ["p1", 1], ["p2", 2]]
   end
 end
