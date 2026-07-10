@@ -94,16 +94,16 @@ defmodule Snowflex.HttpStreamTest do
     :ok
   end
 
-  test "stream_query/5 streams one Result per partition with typed decoding" do
+  test "stream_query/5 streams exactly one Result per partition with typed decoding" do
     results =
       Snowflex.stream_query(TestSnowflakeRepo, "SELECT STREAMED", [], [], &Enum.to_list/1)
 
-    # The "fixed" CNT column decodes to an integer, exactly as execute does
+    # The "fixed" CNT column decodes to an integer, exactly as execute does,
+    # and the cursor halts with the final partition — no trailing empty result
     assert [
              %Result{columns: ["N", "CNT"], rows: [["p0", 0]]},
              %Result{columns: ["N", "CNT"], rows: [["p1", 1]]},
-             %Result{columns: ["N", "CNT"], rows: [["p2", 2]]},
-             %Result{rows: nil}
+             %Result{columns: ["N", "CNT"], rows: [["p2", 2]]}
            ] = results
   end
 

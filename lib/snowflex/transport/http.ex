@@ -355,14 +355,26 @@ defmodule Snowflex.Transport.Http do
           |> Map.put(:columns, Enum.map(metadata["rowType"], & &1["name"]))
           |> Map.put(:metadata, metadata)
 
-        {:reply, {:ok, result}, %{state | current_partition: current_partition + 1}}
+        # Halt with the final partition: the cursor is known to be exhausted
+        # once the last partition index is served, so streams contain exactly
+        # one result per partition (no trailing empty result) and skip a
+        # needless final fetch.
+        reply =
+          if current_partition == max_partition do
+            {:halt, result}
+          else
+            {:ok, result}
+          end
+
+        {:reply, reply, %{state | current_partition: current_partition + 1}}
 
       {:error, error} ->
         {:reply, {:error, error}, state}
     end
   end
 
-  # No more partitions to call, but we do have a current statement
+  # Safety net: fetch called with no partitions left (e.g. an empty
+  # partitionInfo) but with a statement still declared.
   def handle_call(
         {:fetch, _max_partition, _num_rows},
         _from,

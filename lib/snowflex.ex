@@ -269,9 +269,8 @@ defmodule Snowflex do
   fetches partitions on demand, so only one partition of the result set is
   held in memory at a time.
 
-  Each element of the stream is a `Snowflex.Result` holding one partition of
-  rows. The final element may hold no rows (`rows: nil`): the cursor only
-  learns it is exhausted on the fetch after the last partition.
+  Each element of the stream is a `Snowflex.Result` holding exactly one
+  partition of rows.
 
   When called inside `Ecto.Repo.checkout/2`, the stream runs on the
   already-held connection; otherwise a connection is checked out for the
