@@ -304,21 +304,32 @@ defmodule Snowflex.Transport.Http do
   end
 
   def handle_call({:declare, statement, params, opts}, _from, state) do
-    case fetch_statement(state, statement, params, opts) do
-      {:ok, _status,
+    # Long-running statements answer 202 before the result set exists, so poll
+    # to completion (like :execute does) before reading partition metadata.
+    with {:ok, status, body} <- fetch_statement(state, statement, params, opts),
+         {:ok,
+          %{
+            "statementHandle" => statement_handle,
+            "resultSetMetaData" => %{"partitionInfo" => partitions} = metadata
+          }} <- await_async_execution(state, status, body) do
+      {:reply, {:ok, length(partitions) - 1},
        %{
-         "statementHandle" => statement_handle,
-         "resultSetMetaData" => %{"partitionInfo" => partitions} = metadata
-       }} ->
-        {:reply, {:ok, length(partitions) - 1},
-         %{
-           state
-           | current_statement: statement_handle,
-             current_partition: 0,
-             result_metadata: metadata
-         }}
-
+         state
+         | current_statement: statement_handle,
+           current_partition: 0,
+           result_metadata: metadata
+       }}
+    else
       {:error, error} ->
+        {:reply, {:error, error}, state}
+
+      {:ok, body} ->
+        error =
+          Error.exception(
+            "statement did not return a partitioned result set " <>
+              "(multi-statement requests cannot be streamed): #{inspect(body)}"
+          )
+
         {:reply, {:error, error}, state}
     end
   end

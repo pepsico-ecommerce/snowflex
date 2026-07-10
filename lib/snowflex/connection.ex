@@ -118,8 +118,8 @@ defmodule Snowflex.Connection do
     set_base_metadata(state, query)
 
     case transport.fetch(state.pid, cursor, opts) do
-      {:cont, result} ->
-        {:cont, result, query, state}
+      {:ok, result} ->
+        {:cont, result, state}
 
       {:halt, result} ->
         {:halt, result, state}
@@ -148,7 +148,11 @@ defmodule Snowflex.Connection do
 
   @impl DBConnection
   def handle_status(_opts, state) do
-    {:disconnect, Error.exception("Snowflex does not support transactions"), state}
+    # Snowflake has no transactions, so a connection can never be inside one.
+    # DBConnection.run/3 (used by streaming and by Ecto's checkout) probes the
+    # status around every checkout, so this must report :idle rather than
+    # disconnect.
+    {:idle, state}
   end
 
   ## Helpers

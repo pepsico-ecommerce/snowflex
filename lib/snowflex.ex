@@ -15,6 +15,7 @@ defmodule Snowflex do
   @behaviour Ecto.Adapter.Queryable
   @behaviour Ecto.Adapter.Schema
 
+  alias Ecto.Adapter
   alias Ecto.Adapters.SQL
   alias Ecto.UUID
   alias Snowflex.Ecto.Adapter.Stream, as: AdapterStream
@@ -252,6 +253,68 @@ defmodule Snowflex do
       filter_values,
       :raise,
       returning,
+      opts
+    )
+  end
+
+  ## Raw SQL streaming
+
+  @doc """
+  Lazily streams the result of a raw SQL statement, one Snowflake partition at
+  a time, and passes that stream to `fun`.
+
+  Unlike `Ecto.Repo.stream/2` (which this adapter executes eagerly, gathering
+  every partition before producing the first row) this checks out a single
+  connection, declares a cursor, and fetches partitions on demand, so only one
+  partition of the result set is held in memory at a time.
+
+  Each element of the stream is a `Snowflex.Result` holding one partition of
+  rows. The final element may hold no rows (`rows: nil`): the cursor only
+  learns it is exhausted on the fetch after the last partition.
+
+  The stream is only valid inside `fun` — the connection returns to the pool
+  when `fun` returns, so consume the stream before returning from it.
+
+  ## Options
+
+  Options are merged over the repo's configured connection options and passed
+  to `DBConnection.run/3` and every cursor operation.
+
+    * `:timeout` - bounds statement execution (the cursor declare), each
+      partition fetch, and the total time the connection may be held while
+      `fun` consumes the stream. For long statements or large result sets pass
+      a generous value or `:infinity`.
+
+  ## Examples
+
+      Snowflex.stream_query(MyRepo, "SELECT * FROM big_table", [], [timeout: :timer.minutes(30)], fn stream ->
+        stream
+        |> Stream.flat_map(fn %Snowflex.Result{rows: rows} -> rows || [] end)
+        |> Enum.each(&process_row/1)
+      end)
+
+  """
+  @spec stream_query(
+          repo :: Ecto.Repo.t() | pid(),
+          statement :: String.t(),
+          params :: list(),
+          opts :: Keyword.t(),
+          fun :: (Enumerable.t() -> result)
+        ) :: result
+        when result: var
+  def stream_query(repo, statement, params \\ [], opts \\ [], fun)
+      when (is_atom(repo) or is_pid(repo)) and is_function(fun, 1) do
+    %{pid: pool, opts: default_opts} = Adapter.lookup_meta(repo)
+    opts = opts ++ default_opts
+    query = Query.new(statement: statement)
+
+    DBConnection.run(
+      pool,
+      fn conn ->
+        conn
+        |> DBConnection.prepare_stream(query, params, opts)
+        |> fun.()
+      end,
       opts
     )
   end

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Enhancements
+
+- Add `Snowflex.stream_query/5`, which lazily streams the result of a raw SQL statement one Snowflake partition at a time — only one partition of the result set is held in memory, unlike `Ecto.Repo.stream/2`, which this adapter executes eagerly. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
+
+### Bug Fixes
+
+Repaired the DBConnection cursor path, which had never been exercisable ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188)):
+
+- `Snowflex.Connection.handle_fetch/4` matched `{:cont, result}` from the transport, but transports return `{:ok, result}` per the `Snowflex.Transport` contract, so the first fetch of every cursor crashed with a `CaseClauseError`. Its `{:cont, ...}` branch also returned a `{:cont, result, query, state}` 4-tuple, which DBConnection rejects as a bad return.
+- `Snowflex.Connection.handle_status/2` disconnected with "Snowflex does not support transactions", but `DBConnection.run/3` — the required wrapper for streaming, also used by Ecto's `checkout/2` — probes connection status around every checkout. It now reports `{:idle, state}` (a Snowflake connection is never inside a transaction). Explicit transaction callbacks (`handle_begin/commit/rollback`) still reject as before.
+- `Snowflex.Transport.Http` `declare` did not poll async (HTTP 202) statement execution to completion the way `execute` does, so declaring a cursor for any statement running longer than ~45 seconds crashed the transport with a `CaseClauseError` instead of streaming its result.
+
 ## [1.5.0] - 2026-07-02
 
 ### Enhancements

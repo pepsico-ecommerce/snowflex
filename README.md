@@ -174,9 +174,20 @@ iex> Repo.query("SELECT 1; SELECT 2;")
 
 ### Streaming
 
-When streaming rows using `Snowflex.Transport.Http`, keep in mind that [Snowflake dictates the number of partitions returned](https://docs.snowflake.com/en/developer-guide/sql-api/handling-responses#retrieving-additional-partitions). This is different than a normal TCP protocol like `Postgrex`, where the stream will be iterating on one row at a time.
+For large result sets, `Snowflex.stream_query/5` streams a raw SQL statement lazily instead of gathering the full result set in memory. It checks out a single connection, declares a cursor, and fetches Snowflake result partitions on demand while your function consumes the stream:
 
-Internally we utilize the same `Stream` modules as other implementations, but because each traunch of results is being determined externally to your app, that memory usage will be higher than if we were bringing back one row at a time.
+``` elixir
+Snowflex.stream_query(MyRepo, "SELECT * FROM big_table", [], [timeout: :timer.minutes(30)], fn stream ->
+  stream
+  |> Stream.flat_map(fn %Snowflex.Result{rows: rows} -> rows || [] end)
+  |> Stream.each(&process_row/1)
+  |> Stream.run()
+end)
+```
+
+When streaming rows using `Snowflex.Transport.Http`, keep in mind that [Snowflake dictates the number of partitions returned](https://docs.snowflake.com/en/developer-guide/sql-api/handling-responses#retrieving-additional-partitions). This is different than a normal TCP protocol like `Postgrex`, where the stream will be iterating on one row at a time: each stream element is a `Snowflex.Result` holding one partition of rows, so memory usage is bounded by the partition size rather than by a row count.
+
+Note that `Ecto.Repo.stream/2` is still executed eagerly by this adapter (the full result set is fetched before the first row is produced) — use `Snowflex.stream_query/5` when memory matters.
 
 ### Migrations
 

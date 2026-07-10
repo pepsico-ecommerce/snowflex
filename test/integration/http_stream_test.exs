@@ -1,0 +1,119 @@
+defmodule Snowflex.HttpStreamTest do
+  # Full-stack streaming through Snowflex.stream_query/5: Repo → DBConnection
+  # cursor → Snowflex.Transport.Http → stubbed Snowflake SQL API.
+  use ExUnit.Case, async: false
+
+  import Req.Test, only: [set_req_test_to_shared: 1]
+
+  alias Plug.Conn
+  alias Req.Test, as: ReqTest
+  alias Snowflex.Result
+
+  setup :set_req_test_to_shared
+
+  defmodule TestSnowflakeRepo do
+    use Ecto.Repo,
+      otp_app: :snowflex,
+      adapter: Snowflex
+  end
+
+  @sync_handle "01b7e043-0206-7a43-0008-8b8300073d01"
+  @async_handle "01b7e043-0206-7a43-0008-8b8300073d02"
+
+  # Three partitions of one row each; every streamed partition is fetched via
+  # GET ?partition=N (partition 0 included — declare discards the inline data).
+  defp partition_data(n), do: [["p#{n}"]]
+
+  defp completed_body(handle) do
+    %{
+      "statementHandle" => handle,
+      "resultSetMetaData" => %{
+        "partitionInfo" => [
+          %{"rowCount" => 1},
+          %{"rowCount" => 1},
+          %{"rowCount" => 1}
+        ],
+        "rowType" => [%{"name" => "N", "type" => "text"}]
+      },
+      "data" => partition_data(0)
+    }
+  end
+
+  setup do
+    private_key_path = Path.join(File.cwd!(), "test/fixtures/fake_private_key.pem")
+
+    ReqTest.stub(SnowflexStreamStub, fn
+      %{method: "POST", params: %{"statement" => "SELECT 1"}} = conn ->
+        # Connection health check on transport startup
+        ReqTest.json(conn, %{})
+
+      %{method: "POST", params: %{"statement" => "SELECT STREAMED"}} = conn ->
+        ReqTest.json(conn, completed_body(@sync_handle))
+
+      %{method: "POST", params: %{"statement" => "SELECT ASYNC"}} = conn ->
+        # Long-running statement: Snowflake answers 202 and the client must
+        # poll GET /statements/{handle} until the result set exists
+        conn
+        |> Conn.put_resp_content_type("application/json")
+        |> Conn.send_resp(202, Jason.encode!(%{"statementHandle" => @async_handle}))
+
+      %{method: "GET", params: %{"partition" => partition}} = conn ->
+        ReqTest.json(conn, %{"data" => partition_data(partition)})
+
+      %{method: "GET"} = conn ->
+        # The only partition-less GET here is the poll for the async
+        # statement's completion
+        ReqTest.json(conn, completed_body(@async_handle))
+    end)
+
+    start_link_supervised!(
+      {TestSnowflakeRepo,
+       [
+         account_name: "test_acc",
+         username: "test_usr",
+         private_key_path: private_key_path,
+         role: "fake_role",
+         warehouse: "fake_warehouse",
+         pool_size: 1,
+         async_poll_interval: 10,
+         req_options: [plug: {Req.Test, SnowflexStreamStub}]
+       ]}
+    )
+
+    :ok
+  end
+
+  test "stream_query/5 streams one Result per partition" do
+    results =
+      Snowflex.stream_query(TestSnowflakeRepo, "SELECT STREAMED", [], [], &Enum.to_list/1)
+
+    assert [
+             %Result{columns: ["N"], rows: [["p0"]]},
+             %Result{columns: ["N"], rows: [["p1"]]},
+             %Result{columns: ["N"], rows: [["p2"]]},
+             %Result{rows: nil}
+           ] = results
+  end
+
+  test "stream_query/5 flat_maps into a plain row stream" do
+    rows =
+      Snowflex.stream_query(TestSnowflakeRepo, "SELECT STREAMED", fn stream ->
+        stream
+        |> Stream.flat_map(fn %Result{rows: rows} -> rows || [] end)
+        |> Enum.to_list()
+      end)
+
+    assert rows == [["p0"], ["p1"], ["p2"]]
+  end
+
+  test "stream_query/5 polls async (202) statements to completion before streaming" do
+    rows =
+      Snowflex.stream_query(TestSnowflakeRepo, "SELECT ASYNC", fn stream ->
+        stream
+        |> Stream.flat_map(fn %Result{rows: rows} -> rows || [] end)
+        |> Enum.to_list()
+      end)
+
+    assert rows == [["p0"], ["p1"], ["p2"]]
+  end
+end
