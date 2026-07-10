@@ -1,8 +1,10 @@
 defmodule Snowflex.HttpStreamTest do
-  # Full-stack streaming through Snowflex.stream_query/5: Repo → DBConnection
-  # cursor → Snowflex.Transport.Http → stubbed Snowflake SQL API.
+  # Full-stack streaming through Ecto.Repo.stream/2 and Snowflex.stream_query/5:
+  # Repo → DBConnection cursor → Snowflex.Transport.Http → stubbed Snowflake
+  # SQL API.
   use ExUnit.Case, async: false
 
+  import Ecto.Query, only: [from: 2]
   import Req.Test, only: [set_req_test_to_shared: 1]
 
   alias Plug.Conn
@@ -47,19 +49,24 @@ defmodule Snowflex.HttpStreamTest do
     private_key_path = Path.join(File.cwd!(), "test/fixtures/fake_private_key.pem")
 
     ReqTest.stub(SnowflexStreamStub, fn
-      %{method: "POST", params: %{"statement" => "SELECT 1"}} = conn ->
-        # Connection health check on transport startup
-        ReqTest.json(conn, %{})
+      %{method: "POST", params: %{"statement" => statement}} = conn ->
+        case statement do
+          "SELECT 1" ->
+            # Connection health check on transport startup
+            ReqTest.json(conn, %{})
 
-      %{method: "POST", params: %{"statement" => "SELECT STREAMED"}} = conn ->
-        ReqTest.json(conn, completed_body(@sync_handle))
+          "SELECT ASYNC" ->
+            # Long-running statement: Snowflake answers 202 and the client
+            # must poll GET /statements/{handle} until the result set exists
+            conn
+            |> Conn.put_resp_content_type("application/json")
+            |> Conn.send_resp(202, Jason.encode!(%{"statementHandle" => @async_handle}))
 
-      %{method: "POST", params: %{"statement" => "SELECT ASYNC"}} = conn ->
-        # Long-running statement: Snowflake answers 202 and the client must
-        # poll GET /statements/{handle} until the result set exists
-        conn
-        |> Conn.put_resp_content_type("application/json")
-        |> Conn.send_resp(202, Jason.encode!(%{"statementHandle" => @async_handle}))
+          _streamed ->
+            # Any other statement (raw "SELECT STREAMED" or Ecto-generated
+            # SQL) completes immediately with a three-partition result set
+            ReqTest.json(conn, completed_body(@sync_handle))
+        end
 
       %{method: "GET", params: %{"partition" => partition}} = conn ->
         ReqTest.json(conn, %{"data" => partition_data(partition)})
@@ -120,5 +127,50 @@ defmodule Snowflex.HttpStreamTest do
       end)
 
     assert rows == [["p0", 0], ["p1", 1], ["p2", 2]]
+  end
+
+  test "stream_query/5 inside Repo.checkout/2 reuses the held connection" do
+    # pool_size is 1, so this deadlocks (then times out) if stream_query
+    # checks out a second connection instead of reusing checkout's
+    rows =
+      TestSnowflakeRepo.checkout(fn ->
+        Snowflex.stream_query(TestSnowflakeRepo, "SELECT STREAMED", fn stream ->
+          stream
+          |> Stream.flat_map(fn %Result{rows: rows} -> rows || [] end)
+          |> Enum.to_list()
+        end)
+      end)
+
+    assert rows == [["p0", 0], ["p1", 1], ["p2", 2]]
+  end
+
+  test "Repo.stream/2 streams an Ecto queryable lazily inside Repo.checkout/2" do
+    rows =
+      TestSnowflakeRepo.checkout(fn ->
+        from(t in "big_table", select: [t.n, t.cnt])
+        |> TestSnowflakeRepo.stream()
+        |> Enum.to_list()
+      end)
+
+    assert rows == [["p0", 0], ["p1", 1], ["p2", 2]]
+  end
+
+  test "Repo.stream/2 halts the cursor early without consuming every partition" do
+    rows =
+      TestSnowflakeRepo.checkout(fn ->
+        from(t in "big_table", select: [t.n, t.cnt])
+        |> TestSnowflakeRepo.stream()
+        |> Enum.take(1)
+      end)
+
+    assert rows == [["p0", 0]]
+  end
+
+  test "Repo.stream/2 raises when enumerated outside Repo.checkout/2" do
+    stream = TestSnowflakeRepo.stream(from(t in "big_table", select: [t.n, t.cnt]))
+
+    assert_raise RuntimeError, ~r/outside of Ecto\.Repo\.checkout\/2/, fn ->
+      Enum.to_list(stream)
+    end
   end
 end

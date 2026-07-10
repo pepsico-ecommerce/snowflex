@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Enhancements
 
-- Add `Snowflex.stream_query/5`, which lazily streams the result of a raw SQL statement one Snowflake partition at a time — only one partition of the result set is held in memory, unlike `Ecto.Repo.stream/2`, which this adapter executes eagerly. Streamed partitions carry the statement's `rowType` metadata, so values decode to the same types `execute` produces. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
+- `Ecto.Repo.stream/2` is now lazy: it drives the DBConnection cursor and fetches one Snowflake partition at a time instead of executing eagerly (previously it gathered the entire result set before producing the first row). Because the connection must stay checked out while the stream is consumed and Snowflake has no transactions, the enumeration must run inside `Ecto.Repo.checkout/2` — mirroring ecto_sql's stream-inside-transaction requirement — and raises with instructions otherwise. Prefer `Repo.all/2` when you want the whole result set: the eager path fetches partitions in parallel. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
+- Add `Snowflex.stream_query/5`, the raw-SQL counterpart: it lazily streams a statement's result one `Snowflex.Result` partition at a time into a consumer function, checking out a connection for the duration of the function (or reusing the one held by an enclosing `checkout/2`). Streamed partitions carry the statement's `rowType` metadata, so values decode to the same types `execute` produces. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
 
 ### Bug Fixes
 

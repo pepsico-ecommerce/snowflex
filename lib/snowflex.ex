@@ -20,6 +20,7 @@ defmodule Snowflex do
   alias Ecto.UUID
   alias Snowflex.Ecto.Adapter.Stream, as: AdapterStream
   alias Snowflex.Query
+  alias Snowflex.Result
   alias Snowflex.VariantField
   alias String.Chars
 
@@ -263,17 +264,19 @@ defmodule Snowflex do
   Lazily streams the result of a raw SQL statement, one Snowflake partition at
   a time, and passes that stream to `fun`.
 
-  Unlike `Ecto.Repo.stream/2` (which this adapter executes eagerly, gathering
-  every partition before producing the first row) this checks out a single
-  connection, declares a cursor, and fetches partitions on demand, so only one
-  partition of the result set is held in memory at a time.
+  This is the raw-SQL counterpart of `Ecto.Repo.stream/2` (which this adapter
+  also serves lazily via the same cursor machinery): it declares a cursor and
+  fetches partitions on demand, so only one partition of the result set is
+  held in memory at a time.
 
   Each element of the stream is a `Snowflex.Result` holding one partition of
   rows. The final element may hold no rows (`rows: nil`): the cursor only
   learns it is exhausted on the fetch after the last partition.
 
-  The stream is only valid inside `fun` — the connection returns to the pool
-  when `fun` returns, so consume the stream before returning from it.
+  When called inside `Ecto.Repo.checkout/2`, the stream runs on the
+  already-held connection; otherwise a connection is checked out for the
+  duration of `fun`. Either way the stream is only valid inside `fun`, so
+  consume it before returning.
 
   ## Options
 
@@ -308,15 +311,28 @@ defmodule Snowflex do
     opts = opts ++ default_opts
     query = Query.new(statement: statement)
 
-    DBConnection.run(
-      pool,
-      fn conn ->
-        conn
-        |> DBConnection.prepare_stream(query, params, opts)
-        |> fun.()
-      end,
-      opts
-    )
+    run_with_conn(pool, opts, fn conn ->
+      conn
+      |> DBConnection.prepare_stream(query, params, opts)
+      |> fun.()
+    end)
+  end
+
+  # Runs `fun` on the connection held by an enclosing `Ecto.Repo.checkout/2`
+  # when there is one, so stream_query composes with checkout instead of
+  # checking out a second connection (a deadlock at pool_size: 1); otherwise
+  # the connection is scoped to this call, which is safe for stream_query
+  # because consumption happens inside `fun`.
+  #
+  # Repo.checkout delegates to Ecto.Adapters.SQL.checkout/3, which stashes the
+  # connection in the process dictionary under `{Ecto.Adapters.SQL, pool}`;
+  # ecto_sql exposes no public getter for it, so we read the (long-stable) key
+  # directly — the checkout tests pin this integration.
+  defp run_with_conn(pool, opts, fun) do
+    case Process.get({SQL, pool}) do
+      nil -> DBConnection.run(pool, fun, opts)
+      %DBConnection{} = conn -> fun.(conn)
+    end
   end
 
   @doc false
@@ -329,17 +345,34 @@ defmodule Snowflex do
           fun :: Enumerable.reducer()
         ) :: Enumerable.result()
   def reduce(adapter_meta, statement, params, opts, acc, fun) do
-    %{pid: pid, telemetry: telemetry, opts: default_opts} = adapter_meta
-    opts = with_log(telemetry, params, opts ++ default_opts)
+    %{pid: pool, telemetry: telemetry, opts: default_opts} = adapter_meta
 
-    query = Query.new(statement: statement)
+    # The enumeration is driven by the caller (Ecto composes streams with
+    # suspend/resume), so the connection must stay checked out for the
+    # consumer-controlled lifetime of the stream. Only an enclosing
+    # Repo.checkout/2 can provide that scope — a run/3 opened here would check
+    # the connection back in on the first suspension.
+    case Process.get({SQL, pool}) do
+      nil ->
+        raise """
+        cannot reduce stream outside of Ecto.Repo.checkout/2.
 
-    case DBConnection.execute(pid, query, params, opts) do
-      {:ok, _query, %{rows: rows}} ->
-        Enumerable.reduce(rows, acc, fun)
+        Snowflake has no transactions, so the connection scope for a stream \
+        is established with checkout/2 instead:
 
-      {:error, err} ->
-        raise err
+            MyRepo.checkout(fn ->
+              query |> MyRepo.stream() |> Enum.each(...)
+            end, timeout: :timer.minutes(30))
+        """
+
+      %DBConnection{} = conn ->
+        opts = with_log(telemetry, params, opts ++ default_opts)
+        query = Query.new(statement: statement)
+
+        conn
+        |> DBConnection.prepare_stream(query, params, opts)
+        |> Stream.flat_map(fn %Result{rows: rows} -> rows || [] end)
+        |> Enumerable.reduce(acc, fun)
     end
   end
 
@@ -375,6 +408,12 @@ defmodule Snowflex do
     [log: &log(telemetry, params, &1, opts)] ++ opts
   end
 
+  # Cursor operations (declare/fetch) report {:ok, query, cursor} and
+  # {:cont | :halt, result} shapes; normalize them all to {:ok, res}.
+  defp normalize_log_result({:ok, _query, res}), do: {:ok, res}
+  defp normalize_log_result({status, res}) when status in [:cont, :halt], do: {:ok, res}
+  defp normalize_log_result(other), do: other
+
   defp log({repo, log, event_name}, params, entry, opts) do
     %{
       connection_time: query_time,
@@ -387,7 +426,7 @@ defmodule Snowflex do
 
     source = Keyword.get(opts, :source)
     query = Chars.to_string(query)
-    result = with {:ok, _query, res} <- result, do: {:ok, res}
+    result = normalize_log_result(result)
     stacktrace = Keyword.get(opts, :stacktrace)
     log_params = opts[:cast_params] || params
 
