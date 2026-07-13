@@ -174,9 +174,30 @@ iex> Repo.query("SELECT 1; SELECT 2;")
 
 ### Streaming
 
-When streaming rows using `Snowflex.Transport.Http`, keep in mind that [Snowflake dictates the number of partitions returned](https://docs.snowflake.com/en/developer-guide/sql-api/handling-responses#retrieving-additional-partitions). This is different than a normal TCP protocol like `Postgrex`, where the stream will be iterating on one row at a time.
+`Ecto.Repo.stream/2` streams a queryable lazily, fetching Snowflake result partitions on demand instead of gathering the full result set in memory. Because the connection must stay checked out for as long as the stream is being consumed — and Snowflake has no transactions — the enumeration must run inside `Ecto.Repo.checkout/2` (the direct analogue of ecto_sql's requirement that streams run inside a transaction):
 
-Internally we utilize the same `Stream` modules as other implementations, but because each traunch of results is being determined externally to your app, that memory usage will be higher than if we were bringing back one row at a time.
+``` elixir
+MyRepo.checkout(fn ->
+  BigSchema
+  |> where([b], b.inserted_at >= ^cutoff)
+  |> MyRepo.stream()
+  |> Stream.each(&process_row/1)
+  |> Stream.run()
+end, timeout: :timer.minutes(30))
+```
+
+For raw SQL, use `Snowflex.stream_query/5` — the same cursor machinery with a function-scoped connection (no explicit checkout needed; it also reuses the connection when called inside `checkout/2`). Each element is a `Snowflex.Result` holding one partition of rows:
+
+``` elixir
+Snowflex.stream_query(MyRepo, "SELECT * FROM big_table", [], [timeout: :timer.minutes(30)], fn stream ->
+  stream
+  |> Stream.flat_map(fn %Snowflex.Result{rows: rows} -> rows || [] end)
+  |> Stream.each(&process_row/1)
+  |> Stream.run()
+end)
+```
+
+When streaming with `Snowflex.Transport.Http`, keep in mind that [Snowflake dictates the number of partitions returned](https://docs.snowflake.com/en/developer-guide/sql-api/handling-responses#retrieving-additional-partitions). This is different than a normal TCP protocol like `Postgrex`, where the stream iterates one row at a time: partitions are fetched whole, so memory usage is bounded by the partition size rather than by a row count. Pass a `:timeout` that covers statement execution plus however long consumption takes, and prefer `Ecto.Repo.all/2` when you want the entire result set anyway — the eager path fetches partitions in parallel and is faster for full materialization.
 
 ### Migrations
 

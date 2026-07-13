@@ -291,9 +291,12 @@ defmodule Snowflex.ConnectionTest do
   describe "query execution" do
     test "can stream results" do
       query = from u in User, select: u.id, limit: 10
-      stream = Http.stream(query)
 
-      result = Enum.to_list(stream)
+      result =
+        Http.checkout(fn ->
+          query |> Http.stream() |> Enum.to_list()
+        end)
+
       assert is_list(result)
       assert length(result) <= 10
     end

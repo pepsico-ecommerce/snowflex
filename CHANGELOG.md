@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Enhancements
+
+- `Ecto.Repo.stream/2` is now lazy: it drives the DBConnection cursor and fetches one Snowflake partition at a time instead of executing eagerly (previously it gathered the entire result set before producing the first row). Because the connection must stay checked out while the stream is consumed and Snowflake has no transactions, the enumeration must run inside `Ecto.Repo.checkout/2` — mirroring ecto_sql's stream-inside-transaction requirement — and raises with instructions otherwise. Prefer `Repo.all/2` when you want the whole result set: the eager path fetches partitions in parallel. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
+- Add `Snowflex.stream_query/5`, the raw-SQL counterpart: it lazily streams a statement's result one `Snowflex.Result` partition at a time into a consumer function, checking out a connection for the duration of the function (or reusing the one held by an enclosing `checkout/2`). Streamed partitions carry the statement's `rowType` metadata, so values decode to the same types `execute` produces. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
+- The cursor halts with the final partition, so streams contain exactly one result per partition — no trailing empty result — and skip a needless final fetch round-trip. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
+
+### Bug Fixes
+
+Repaired the DBConnection cursor path, which had never been exercisable ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188)):
+
+- `Snowflex.Connection.handle_fetch/4` matched `{:cont, result}` from the transport, but transports return `{:ok, result}` per the `Snowflex.Transport` contract, so the first fetch of every cursor crashed with a `CaseClauseError`. Its `{:cont, ...}` branch also returned a `{:cont, result, query, state}` 4-tuple, which DBConnection rejects as a bad return.
+- `Snowflex.Connection.handle_status/2` disconnected with "Snowflex does not support transactions", but `DBConnection.run/3` — the required wrapper for streaming, also used by Ecto's `checkout/2` — probes connection status around every checkout. It now reports `{:idle, state}` (a Snowflake connection is never inside a transaction). Explicit transaction callbacks (`handle_begin/commit/rollback`) still reject as before.
+- `Snowflex.Transport.Http` `declare` did not poll async (HTTP 202) statement execution to completion the way `execute` does, so declaring a cursor for any statement running longer than ~45 seconds crashed the transport with a `CaseClauseError` instead of streaming its result.
+
 ## [1.5.0] - 2026-07-02
 
 ### Enhancements

@@ -10,6 +10,8 @@ defmodule Snowflex.Transport do
 
   @type query_result :: {:ok, Result.t()} | {:error, Error.t()}
   @type connection_opts :: Keyword.t()
+  @type cursor :: term()
+  @type fetch_result :: {:ok, Result.t()} | {:halt, Result.t()} | {:error, Error.t()}
 
   @callback start_link(connection_opts()) :: GenServer.on_start()
   @doc """
@@ -17,14 +19,17 @@ defmodule Snowflex.Transport do
   """
   @callback execute_statement(pid(), String.t(), any(), Keyword.t()) :: query_result()
   @doc """
-  Declare a statement (primarily for streaming).  See `c:DBConnection.handle_declare/4` for more information.
+  Declare a statement (primarily for streaming) and return a cursor.
+  See `c:DBConnection.handle_declare/4` for more information.
   """
   @callback declare(pid(), String.t(), any(), Keyword.t()) ::
-              query_result()
+              {:ok, cursor()} | {:error, Error.t()}
   @doc """
-  Fetch the next result from a cursor.  See `c:DBConnection.handle_fetch/4` for more information.
+  Fetch the next result from a cursor. Return `{:ok, result}` while the cursor
+  may still hold more results and `{:halt, result}` once it is exhausted.
+  See `c:DBConnection.handle_fetch/4` for more information.
   """
-  @callback fetch(pid(), String.t(), Keyword.t()) :: query_result()
+  @callback fetch(pid(), cursor(), Keyword.t()) :: fetch_result()
   @doc """
   Disconnect from the database.  See `c:DBConnection.handle_close/3` for more information.
   """
