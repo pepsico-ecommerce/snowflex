@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-13
+
 ### Enhancements
 
 - `Ecto.Repo.stream/2` is now lazy: it drives the DBConnection cursor and fetches one Snowflake partition at a time instead of executing eagerly (previously it gathered the entire result set before producing the first row). Because the connection must stay checked out while the stream is consumed and Snowflake has no transactions, the enumeration must run inside `Ecto.Repo.checkout/2` — mirroring ecto_sql's stream-inside-transaction requirement — and raises with instructions otherwise. Prefer `Repo.all/2` when you want the whole result set: the eager path fetches partitions in parallel. ([#188](https://github.com/pepsico-ecommerce/snowflex/pull/188))
