@@ -370,7 +370,6 @@ defmodule Snowflex.Transport.HttpTest do
       assert Keyword.get(built, :compressed) == true
     end
   end
-end
 
   # Uses the same throwaway key fixture already committed in the test suite.
   @lazy_pem File.read!("test/fixtures/fake_private_key.pem")
@@ -403,3 +402,4 @@ end
       end
     end
   end
+end
