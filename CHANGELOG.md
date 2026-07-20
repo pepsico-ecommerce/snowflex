@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Enhancements
+
+- `Snowflex.Transport.Http` now accepts a `:lazy` option. When set to `true`, the `SELECT 1` connection check that normally runs during `GenServer.init/1` is skipped, so the transport starts immediately even when Snowflake is unreachable at boot time. Connectivity errors surface on the first real query instead. This is useful when the repo is hosted under an intermediate supervisor designed to isolate Snowflake failures from the rest of the application. Defaults to `false` (existing behaviour unchanged).
+
 ## [1.6.0] - 2026-07-13
 
 ### Enhancements
