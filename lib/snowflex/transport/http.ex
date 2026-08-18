@@ -236,9 +236,12 @@ defmodule Snowflex.Transport.Http do
   only the subset we rely upon.  Your use case might necessitate changing/modifying/adding other options however.
 
   To route Snowflake requests at a dedicated `Finch` pool, pass it via `:req_options`, e.g.
-  `req_options: [finch: MyFinch]`. When a `:finch` instance is provided this way, `Http` omits
-  `:connect_options` so the two do not conflict (`Req` does not allow specifying `:connect_options`
-  and `:finch` at the same time); the Finch pool then owns the connection configuration.
+  `req_options: [finch: [name: MyFinch]]`. The bare pool name (`req_options: [finch: MyFinch]`)
+  is also accepted — either form is translated to the one the installed Req version expects
+  (Req 0.7 deprecated the bare name; earlier versions only understand it). When a `:finch` pool
+  is provided this way, `Http` omits `:connect_options` so the two do not conflict (`Req` does
+  not allow specifying `:connect_options` and `:finch` at the same time); the Finch pool then
+  owns the connection configuration.
 
   `options/1` remains available when you need to build the Req client yourself and modify it further:
 
@@ -251,7 +254,7 @@ defmodule Snowflex.Transport.Http do
 
     options
     |> Keyword.delete(:connect_options)
-    |> Keyword.put(:finch, MyFinch)
+    |> Keyword.put(:finch, name: MyFinch)
     |> Req.new()
   ```
   """
@@ -590,8 +593,31 @@ defmodule Snowflex.Transport.Http do
        retry_base_delay: Keyword.get(validated_opts, :retry_base_delay, 1000),
        retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000),
        connect_options: Keyword.get(validated_opts, :connect_options, []),
-       req_options: Keyword.get(validated_opts, :req_options, [])
+       req_options: validated_opts |> Keyword.get(:req_options, []) |> normalize_finch_option()
      }}
+  end
+
+  # Req 0.7 deprecated setting `:finch` to a bare pool name in favor of
+  # `finch: [name: pool]`, while Req < 0.7 only understands the bare name.
+  # Accept either form and translate it to the one the installed Req expects.
+  defp normalize_finch_option(req_options) do
+    case {Keyword.fetch(req_options, :finch), req_finch_keyword_form?()} do
+      {{:ok, pool}, true} when is_atom(pool) and not is_nil(pool) ->
+        Keyword.put(req_options, :finch, name: pool)
+
+      {{:ok, [name: pool]}, false} ->
+        Keyword.put(req_options, :finch, pool)
+
+      _other ->
+        req_options
+    end
+  end
+
+  defp req_finch_keyword_form? do
+    case Application.spec(:req, :vsn) do
+      nil -> true
+      vsn -> vsn |> List.to_string() |> Version.match?(">= 0.7.0")
+    end
   end
 
   # Use an explicitly-configured fingerprint when present (backward compatible);

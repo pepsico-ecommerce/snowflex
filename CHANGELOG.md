@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `Snowflex.Transport.Http` no longer triggers Req 0.7's deprecation warning ("setting `:finch` to a Finch pool name is deprecated, use `finch: [name: name]` instead") on every request when a dedicated Finch pool is routed via `req_options: [finch: MyFinch]`. The transport now accepts both the bare pool name and the `finch: [name: MyFinch]` form, translating either into the one the installed Req version expects (Req < 0.7 only understands the bare name).
+
 ## [1.6.0] - 2026-07-13
 
 ### Enhancements
