@@ -237,11 +237,10 @@ defmodule Snowflex.Transport.Http do
 
   To route Snowflake requests at a dedicated `Finch` pool, pass it via `:req_options`, e.g.
   `req_options: [finch: [name: MyFinch]]`. The bare pool name (`req_options: [finch: MyFinch]`)
-  is also accepted — either form is translated to the one the installed Req version expects
-  (Req 0.7 deprecated the bare name; earlier versions only understand it). When a `:finch` pool
-  is provided this way, `Http` omits `:connect_options` so the two do not conflict (`Req` does
-  not allow specifying `:connect_options` and `:finch` at the same time); the Finch pool then
-  owns the connection configuration.
+  is also accepted and normalized to the keyword form (Req 0.7 deprecated the bare name).
+  When a `:finch` pool is provided this way, `Http` omits `:connect_options` so the two do
+  not conflict (`Req` does not allow specifying `:connect_options` and `:finch` at the same
+  time); the Finch pool then owns the connection configuration.
 
   `options/1` remains available when you need to build the Req client yourself and modify it further:
 
@@ -598,25 +597,15 @@ defmodule Snowflex.Transport.Http do
   end
 
   # Req 0.7 deprecated setting `:finch` to a bare pool name in favor of
-  # `finch: [name: pool]`, while Req < 0.7 only understands the bare name.
-  # Accept either form and translate it to the one the installed Req expects.
+  # `finch: [name: pool]`; wrap the bare name so existing configs keep working
+  # without triggering the deprecation warning.
   defp normalize_finch_option(req_options) do
-    case {Keyword.fetch(req_options, :finch), req_finch_keyword_form?()} do
-      {{:ok, pool}, true} when is_atom(pool) and not is_nil(pool) ->
+    case Keyword.fetch(req_options, :finch) do
+      {:ok, pool} when is_atom(pool) and not is_nil(pool) ->
         Keyword.put(req_options, :finch, name: pool)
-
-      {{:ok, [name: pool]}, false} ->
-        Keyword.put(req_options, :finch, pool)
 
       _other ->
         req_options
-    end
-  end
-
-  defp req_finch_keyword_form? do
-    case Application.spec(:req, :vsn) do
-      nil -> true
-      vsn -> vsn |> List.to_string() |> Version.match?(">= 0.7.0")
     end
   end
 

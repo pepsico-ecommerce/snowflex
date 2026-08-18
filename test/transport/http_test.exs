@@ -343,39 +343,27 @@ defmodule Snowflex.Transport.HttpTest do
   describe "options/1 Finch pool selection" do
     @private_key_opts @base_opts ++ [private_key_from_string: @test_private_key]
 
-    # Req 0.7 deprecated `finch: MyFinch` in favor of `finch: [name: MyFinch]`;
-    # earlier versions only understand the bare name. The transport translates
-    # either input form into the one the installed Req expects.
-    @req_finch_form (if :req
-                        |> Application.spec(:vsn)
-                        |> List.to_string()
-                        |> Version.match?(">= 0.7.0") do
-                       [name: MyApp.Finch.Snowflake]
-                     else
-                       MyApp.Finch.Snowflake
-                     end)
-
     test "omits :connect_options when a :finch instance is supplied via :req_options" do
       opts = @private_key_opts ++ [req_options: [finch: MyApp.Finch.Snowflake]]
 
       assert {:ok, built} = Http.options(opts)
       refute Keyword.has_key?(built, :connect_options)
-      assert Keyword.get(built, :finch) == @req_finch_form
+      assert Keyword.get(built, :finch) == [name: MyApp.Finch.Snowflake]
     end
 
-    test "translates a bare :finch pool name into the form the installed Req expects" do
+    test "wraps a bare :finch pool name into finch: [name: pool]" do
       opts = @private_key_opts ++ [req_options: [finch: MyApp.Finch.Snowflake]]
 
       assert {:ok, built} = Http.options(opts)
-      assert Keyword.get(built, :finch) == @req_finch_form
+      assert Keyword.get(built, :finch) == [name: MyApp.Finch.Snowflake]
     end
 
-    test "translates finch: [name: pool] into the form the installed Req expects" do
+    test "passes finch: [name: pool] through unchanged" do
       opts = @private_key_opts ++ [req_options: [finch: [name: MyApp.Finch.Snowflake]]]
 
       assert {:ok, built} = Http.options(opts)
       refute Keyword.has_key?(built, :connect_options)
-      assert Keyword.get(built, :finch) == @req_finch_form
+      assert Keyword.get(built, :finch) == [name: MyApp.Finch.Snowflake]
     end
 
     test "keeps :connect_options when no :finch instance is supplied" do
