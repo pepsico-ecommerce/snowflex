@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- The minimum supported Req version is now 0.7 (`{:req, "~> 0.7"}`, previously `"~> 0.5"`). Consumers pinned to an older Req should stay on snowflex 1.6.0 until they can upgrade.
+
+### Bug Fixes
+
+- `Snowflex.Transport.Http` no longer triggers Req 0.7's deprecation warning ("setting `:finch` to a Finch pool name is deprecated, use `finch: [name: name]` instead") on every request when a dedicated Finch pool is routed via `req_options: [finch: MyFinch]`. The canonical form is now `req_options: [finch: [name: MyFinch]]`; the bare pool name is still accepted and wrapped automatically.
+
 ## [1.6.0] - 2026-07-13
 
 ### Enhancements

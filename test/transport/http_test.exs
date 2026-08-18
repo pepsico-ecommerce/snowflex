@@ -348,7 +348,22 @@ defmodule Snowflex.Transport.HttpTest do
 
       assert {:ok, built} = Http.options(opts)
       refute Keyword.has_key?(built, :connect_options)
-      assert Keyword.get(built, :finch) == MyApp.Finch.Snowflake
+      assert Keyword.get(built, :finch) == [name: MyApp.Finch.Snowflake]
+    end
+
+    test "wraps a bare :finch pool name into finch: [name: pool]" do
+      opts = @private_key_opts ++ [req_options: [finch: MyApp.Finch.Snowflake]]
+
+      assert {:ok, built} = Http.options(opts)
+      assert Keyword.get(built, :finch) == [name: MyApp.Finch.Snowflake]
+    end
+
+    test "passes finch: [name: pool] through unchanged" do
+      opts = @private_key_opts ++ [req_options: [finch: [name: MyApp.Finch.Snowflake]]]
+
+      assert {:ok, built} = Http.options(opts)
+      refute Keyword.has_key?(built, :connect_options)
+      assert Keyword.get(built, :finch) == [name: MyApp.Finch.Snowflake]
     end
 
     test "keeps :connect_options when no :finch instance is supplied" do

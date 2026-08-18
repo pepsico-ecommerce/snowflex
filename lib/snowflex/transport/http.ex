@@ -236,9 +236,11 @@ defmodule Snowflex.Transport.Http do
   only the subset we rely upon.  Your use case might necessitate changing/modifying/adding other options however.
 
   To route Snowflake requests at a dedicated `Finch` pool, pass it via `:req_options`, e.g.
-  `req_options: [finch: MyFinch]`. When a `:finch` instance is provided this way, `Http` omits
-  `:connect_options` so the two do not conflict (`Req` does not allow specifying `:connect_options`
-  and `:finch` at the same time); the Finch pool then owns the connection configuration.
+  `req_options: [finch: [name: MyFinch]]`. The bare pool name (`req_options: [finch: MyFinch]`)
+  is also accepted and normalized to the keyword form (Req 0.7 deprecated the bare name).
+  When a `:finch` pool is provided this way, `Http` omits `:connect_options` so the two do
+  not conflict (`Req` does not allow specifying `:connect_options` and `:finch` at the same
+  time); the Finch pool then owns the connection configuration.
 
   `options/1` remains available when you need to build the Req client yourself and modify it further:
 
@@ -251,7 +253,7 @@ defmodule Snowflex.Transport.Http do
 
     options
     |> Keyword.delete(:connect_options)
-    |> Keyword.put(:finch, MyFinch)
+    |> Keyword.put(:finch, name: MyFinch)
     |> Req.new()
   ```
   """
@@ -590,8 +592,21 @@ defmodule Snowflex.Transport.Http do
        retry_base_delay: Keyword.get(validated_opts, :retry_base_delay, 1000),
        retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000),
        connect_options: Keyword.get(validated_opts, :connect_options, []),
-       req_options: Keyword.get(validated_opts, :req_options, [])
+       req_options: validated_opts |> Keyword.get(:req_options, []) |> normalize_finch_option()
      }}
+  end
+
+  # Req 0.7 deprecated setting `:finch` to a bare pool name in favor of
+  # `finch: [name: pool]`; wrap the bare name so existing configs keep working
+  # without triggering the deprecation warning.
+  defp normalize_finch_option(req_options) do
+    case Keyword.fetch(req_options, :finch) do
+      {:ok, pool} when is_atom(pool) and not is_nil(pool) ->
+        Keyword.put(req_options, :finch, name: pool)
+
+      _other ->
+        req_options
+    end
   end
 
   # Use an explicitly-configured fingerprint when present (backward compatible);
