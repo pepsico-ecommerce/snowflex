@@ -112,9 +112,7 @@ defmodule Snowflex.Connection do
   # transport may not implement them. Report that as a Snowflex.Error instead of
   # letting it surface as an UndefinedFunctionError.
   defp ensure_supported(transport, fun, arity) do
-    Code.ensure_loaded?(transport)
-
-    if function_exported?(transport, fun, arity) do
+    if Code.ensure_loaded?(transport) and function_exported?(transport, fun, arity) do
       :ok
     else
       {:error,
