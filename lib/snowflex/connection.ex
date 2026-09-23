@@ -76,13 +76,52 @@ defmodule Snowflex.Connection do
     # Set base metadata at the start so it's available even if DBConnection times out
     set_base_metadata(state, query)
 
-    case transport.execute_statement(state.pid, query.statement, params, opts) do
+    case dispatch(transport, state.pid, query, params, opts) do
       {:ok, result} ->
         {:ok, query, result, state}
 
       {:error, reason} ->
         enrich_logger_metadata_from_error(reason)
         {:error, reason, state}
+    end
+  end
+
+  defp dispatch(transport, pid, %{op: :submit_async, statement: statement}, params, opts) do
+    with :ok <- ensure_supported(transport, :submit_async, 4) do
+      transport.submit_async(pid, statement, params, opts)
+    end
+  end
+
+  defp dispatch(transport, pid, %{op: :status, statement: handle}, _params, opts) do
+    with :ok <- ensure_supported(transport, :statement_status, 3) do
+      transport.statement_status(pid, handle, opts)
+    end
+  end
+
+  defp dispatch(transport, pid, %{op: :cancel, statement: handle}, _params, opts) do
+    with :ok <- ensure_supported(transport, :cancel_statement, 3) do
+      transport.cancel_statement(pid, handle, opts)
+    end
+  end
+
+  defp dispatch(transport, pid, query, params, opts) do
+    transport.execute_statement(pid, query.statement, params, opts)
+  end
+
+  # The async callbacks are optional on Snowflex.Transport, so a custom
+  # transport may not implement them. Report that as a Snowflex.Error instead of
+  # letting it surface as an UndefinedFunctionError.
+  defp ensure_supported(transport, fun, arity) do
+    Code.ensure_loaded?(transport)
+
+    if function_exported?(transport, fun, arity) do
+      :ok
+    else
+      {:error,
+       Error.exception(
+         "transport #{inspect(transport)} does not implement #{fun}/#{arity}, " <>
+           "so asynchronous statement submission is not available"
+       )}
     end
   end
 

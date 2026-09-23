@@ -19,6 +19,7 @@ defmodule Snowflex do
   alias Ecto.Adapters.SQL
   alias Ecto.UUID
   alias Snowflex.Ecto.Adapter.Stream, as: AdapterStream
+  alias Snowflex.Error
   alias Snowflex.Query
   alias Snowflex.Result
   alias Snowflex.VariantField
@@ -331,6 +332,111 @@ defmodule Snowflex do
     case Process.get({SQL, pool}) do
       nil -> DBConnection.run(pool, fun, opts)
       %DBConnection{} = conn -> fun.(conn)
+    end
+  end
+
+  ## Asynchronous statements
+
+  @doc """
+  Submits `statement` for execution and returns its Snowflake statement handle
+  without waiting for the statement to finish.
+
+  A connection is checked out only for the submission round-trip, so a
+  long-running statement does not occupy a pool slot while it runs. Use
+  `statement_status/3` to check on it and `cancel_statement/3` to stop it.
+
+  Snowflake bounds the statement itself with `STATEMENT_TIMEOUT_IN_SECONDS`;
+  nothing on this side will cancel it, so prefer statements that are safe to
+  leave running unattended.
+
+  ## Options
+
+  Options are merged over the repo's configured connection options.
+
+    * `:timeout` - bounds the submission round-trip only, *not* the statement's
+      own execution.
+    * `:query_tag` - sets Snowflake's `QUERY_TAG`, useful for correlating the
+      statement later.
+
+  ## Examples
+
+      {:ok, handle} = Snowflex.submit_async(MyRepo, "CALL long_running_proc()")
+
+      case Snowflex.statement_status(MyRepo, handle) do
+        {:ok, :running} -> :still_going
+        {:ok, :succeeded} -> :done
+        {:error, error} -> Logger.error(Exception.message(error))
+      end
+
+  """
+  @spec submit_async(
+          repo :: Ecto.Repo.t() | pid(),
+          statement :: String.t(),
+          params :: list(),
+          opts :: Keyword.t()
+        ) :: {:ok, String.t()} | {:error, Error.t()}
+  def submit_async(repo, statement, params \\ [], opts \\ [])
+      when is_atom(repo) or is_pid(repo) do
+    case run_op(repo, :submit_async, statement, params, opts) do
+      {:ok, %Result{query_id: handle}} -> {:ok, handle}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  @doc """
+  Reports the status of a statement previously submitted with `submit_async/4`.
+
+  Returns `{:ok, :running}` while the statement is still executing and
+  `{:ok, :succeeded}` once it has completed. A statement that failed is reported
+  as `{:error, error}` carrying Snowflake's error code and message.
+
+  Note that Snowflake only retains a statement's result for a limited period; a
+  handle queried long after completion may report an error rather than success.
+  """
+  @spec statement_status(
+          repo :: Ecto.Repo.t() | pid(),
+          handle :: String.t(),
+          opts :: Keyword.t()
+        ) :: {:ok, :running | :succeeded} | {:error, Error.t()}
+  def statement_status(repo, handle, opts \\ [])
+      when (is_atom(repo) or is_pid(repo)) and is_binary(handle) do
+    case run_op(repo, :status, handle, [], opts) do
+      {:ok, %Result{metadata: %{"status" => "running"}}} -> {:ok, :running}
+      {:ok, %Result{}} -> {:ok, :succeeded}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  @doc """
+  Requests cancellation of a statement previously submitted with `submit_async/4`.
+
+  Cancellation is a request to Snowflake, not a guarantee: a statement that has
+  already finished (or that Snowflake no longer knows about) returns an error.
+  """
+  @spec cancel_statement(
+          repo :: Ecto.Repo.t() | pid(),
+          handle :: String.t(),
+          opts :: Keyword.t()
+        ) :: :ok | {:error, Error.t()}
+  def cancel_statement(repo, handle, opts \\ [])
+      when (is_atom(repo) or is_pid(repo)) and is_binary(handle) do
+    case run_op(repo, :cancel, handle, [], opts) do
+      {:ok, %Result{}} -> :ok
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  # Runs a non-:execute transport operation over the pool, reusing the ordinary
+  # execute path so these calls get the same logging, telemetry and error
+  # enrichment as a normal query.
+  defp run_op(repo, op, statement, params, opts) do
+    %{pid: pool, telemetry: telemetry, opts: default_opts} = Adapter.lookup_meta(repo)
+    opts = with_log(telemetry, params, opts ++ default_opts)
+    query = %Query{statement: statement, op: op}
+
+    case DBConnection.execute(pool, query, params, opts) do
+      {:ok, _query, result} -> {:ok, result}
+      {:error, error} -> {:error, error}
     end
   end
 

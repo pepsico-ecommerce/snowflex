@@ -202,6 +202,24 @@ defmodule Snowflex.Transport.Http do
   end
 
   @impl Snowflex.Transport
+  def submit_async(pid, statement, params, opts) do
+    opts = add_default_timeout(opts)
+    GenServer.call(pid, {:submit_async, statement, params, opts}, opts[:timeout])
+  end
+
+  @impl Snowflex.Transport
+  def statement_status(pid, handle, opts) do
+    opts = add_default_timeout(opts)
+    GenServer.call(pid, {:statement_status, handle, opts}, opts[:timeout])
+  end
+
+  @impl Snowflex.Transport
+  def cancel_statement(pid, handle, opts) do
+    opts = add_default_timeout(opts)
+    GenServer.call(pid, {:cancel_statement, handle, opts}, opts[:timeout])
+  end
+
+  @impl Snowflex.Transport
   def disconnect(pid) do
     if Process.alive?(pid) do
       Process.exit(pid, :normal)
@@ -334,6 +352,38 @@ defmodule Snowflex.Transport.Http do
 
         {:reply, {:error, error}, state}
     end
+  end
+
+  # Fire-and-forget submission. Snowflake answers `async=true` with 202 and a
+  # statement handle as soon as it accepts the statement, so this deliberately
+  # does NOT call await_async_execution/3 — polling here is what pins the
+  # connection for the statement's full duration. It also leaves
+  # :current_statement alone: that field belongs to the cursor path, and
+  # overwriting it would corrupt an in-flight stream on the same connection.
+  def handle_call({:submit_async, statement, params, opts}, _from, state) do
+    case fetch_statement(state, statement, params, opts, async?: true) do
+      {:ok, _status, %{"statementHandle" => handle} = body} ->
+        {:reply, {:ok, handle_result(body, handle)}, state, :hibernate}
+
+      {:ok, _status, body} ->
+        error =
+          Error.exception(
+            "Snowflake accepted the statement but returned no statementHandle: #{inspect(body)}"
+          )
+
+        {:reply, {:error, error}, state}
+
+      {:error, error} ->
+        {:reply, {:error, error}, state}
+    end
+  end
+
+  def handle_call({:statement_status, handle, opts}, _from, state) do
+    {:reply, request_statement_status(state, handle, opts), state, :hibernate}
+  end
+
+  def handle_call({:cancel_statement, handle, opts}, _from, state) do
+    {:reply, request_cancel(state, handle, opts), state, :hibernate}
   end
 
   def handle_call(
@@ -808,7 +858,7 @@ defmodule Snowflex.Transport.Http do
 
   # HTTP Calls
 
-  defp fetch_statement(state, statement, params, opts) do
+  defp fetch_statement(state, statement, params, opts, call_opts \\ []) do
     req_body = %{
       statement: statement,
       timeout: opts[:timeout],
@@ -824,7 +874,17 @@ defmodule Snowflex.Transport.Http do
 
     req_client = build_req_client(state)
 
-    case Req.post(req_client, url: url, json: req_body, receive_timeout: opts[:timeout]) do
+    # `async=true` makes Snowflake acknowledge with 202 + statementHandle
+    # immediately instead of holding the response open until the statement
+    # finishes (or until its own ~45s cutoff).
+    query_params = if call_opts[:async?], do: %{async: true}, else: %{}
+
+    case Req.post(req_client,
+           url: url,
+           json: req_body,
+           params: query_params,
+           receive_timeout: opts[:timeout]
+         ) do
       {:ok, %{status: status, body: body}} when status in 200..299 ->
         {:ok, status, body}
 
@@ -897,6 +957,97 @@ defmodule Snowflex.Transport.Http do
              partition_index: partition_index
            }
          }}
+    end
+  end
+
+  # Snowflake reports async statement state through the status code of a plain
+  # GET on the handle: 202 while it is still running, 2xx once it succeeded, and
+  # 422 when it finished with an error.
+  defp request_statement_status(state, handle, opts) do
+    url = "/api/v2/statements/#{handle}"
+    req_client = build_req_client(state)
+
+    case Req.get(req_client, url: url, receive_timeout: opts[:timeout]) do
+      {:ok, %{status: 202, body: body}} ->
+        {:ok, status_result(body, handle, "running")}
+
+      {:ok, %{status: status, body: body}} when status in 200..299 ->
+        {:ok, status_result(body, handle, "succeeded")}
+
+      {:ok, response} ->
+        {:error, statement_error(response, handle, opts)}
+
+      {:error, exception} ->
+        {:error,
+         %Error{
+           message: inspect(exception),
+           code: "HTTP_ERROR",
+           metadata: %{query_id: handle, opts: opts}
+         }}
+    end
+  end
+
+  defp request_cancel(state, handle, opts) do
+    url = "/api/v2/statements/#{handle}/cancel"
+    req_client = build_req_client(state)
+
+    case Req.post(req_client, url: url, receive_timeout: opts[:timeout]) do
+      {:ok, %{status: status, body: body}} when status in 200..299 ->
+        {:ok, handle_result(body, handle)}
+
+      {:ok, response} ->
+        {:error, statement_error(response, handle, opts)}
+
+      {:error, exception} ->
+        {:error,
+         %Error{
+           message: inspect(exception),
+           code: "HTTP_ERROR",
+           metadata: %{query_id: handle, opts: opts}
+         }}
+    end
+  end
+
+  defp status_result(body, handle, status) do
+    body
+    |> handle_result(handle)
+    |> Map.put(:metadata, Map.put(normalize_body(body), "status", status))
+  end
+
+  # Handle-addressed responses (submit ack, status, cancel) carry no rows, and
+  # their body is not guaranteed to be a JSON object, so build the Result from
+  # the handle we already know instead of reading it back out of the body.
+  defp handle_result(body, handle) do
+    body = normalize_body(body)
+
+    %Result{
+      query_id: handle,
+      request_id: body["requestId"],
+      sql_state: body["sqlState"],
+      rows: nil,
+      num_rows: 0
+    }
+  end
+
+  defp normalize_body(body) when is_map(body), do: body
+  defp normalize_body(_body), do: %{}
+
+  defp statement_error(%{status: status, body: body}, handle, opts) do
+    case body do
+      %{"code" => code, "message" => message} ->
+        %Error{
+          message: String.replace(message, ~r/\n/, " "),
+          code: code,
+          sql_state: Map.get(body, "sqlState"),
+          metadata: %{query_id: handle, response: body, opts: opts}
+        }
+
+      _any ->
+        %Error{
+          message: "HTTP #{status}: #{inspect(body)}",
+          code: status,
+          metadata: %{query_id: handle, response: body, opts: opts}
+        }
     end
   end
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Enhancements
+
+- Add `Snowflex.submit_async/4`, `Snowflex.statement_status/3` and `Snowflex.cancel_statement/3` for fire-and-forget statement submission. `submit_async/4` sends Snowflake's `async=true` query parameter, so the API acknowledges with a statement handle as soon as it accepts the statement instead of holding the response open until the statement finishes. A connection is checked out only for the submission round-trip, so long-running statements no longer occupy a pool slot for their full duration. Submitted statements are bounded only by Snowflake's `STATEMENT_TIMEOUT_IN_SECONDS`, since nothing on the client side waits on them. ([#197](https://github.com/pepsico-ecommerce/snowflex/issues/197))
+- `Snowflex.Transport` gains three optional callbacks — `submit_async/4`, `statement_status/3` and `cancel_statement/3` — implemented by `Snowflex.Transport.Http`. They are optional, so existing custom transports continue to satisfy the behaviour without change; calling an async function on a transport that does not implement them returns a descriptive `Snowflex.Error` rather than raising `UndefinedFunctionError`.
+
 ### Breaking Changes
 
 - The minimum supported Req version is now 0.7 (`{:req, "~> 0.7"}`, previously `"~> 0.5"`). Consumers pinned to an older Req should stay on snowflex 1.6.0 until they can upgrade.

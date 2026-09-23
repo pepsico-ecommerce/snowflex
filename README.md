@@ -199,6 +199,28 @@ end)
 
 When streaming with `Snowflex.Transport.Http`, keep in mind that [Snowflake dictates the number of partitions returned](https://docs.snowflake.com/en/developer-guide/sql-api/handling-responses#retrieving-additional-partitions). This is different than a normal TCP protocol like `Postgrex`, where the stream iterates one row at a time: partitions are fetched whole, so memory usage is bounded by the partition size rather than by a row count. Pass a `:timeout` that covers statement execution plus however long consumption takes, and prefer `Ecto.Repo.all/2` when you want the entire result set anyway — the eager path fetches partitions in parallel and is faster for full materialization.
 
+### Asynchronous Statements
+
+Ordinary queries occupy a connection for as long as the statement runs. When you only need to *start* a statement — a stored procedure, a long-running `MERGE`, a warehouse maintenance task — `Snowflex.submit_async/4` submits it and returns Snowflake's statement handle as soon as the submission round-trip completes, so no pool slot is held while the statement runs:
+
+``` elixir
+{:ok, handle} = Snowflex.submit_async(MyRepo, "CALL rebuild_scenarios(?)", [scenario_id])
+```
+
+Check on it later with the handle, and cancel it if you need to:
+
+``` elixir
+case Snowflex.statement_status(MyRepo, handle) do
+  {:ok, :running} -> :still_running
+  {:ok, :succeeded} -> :done
+  {:error, error} -> Logger.error("statement failed: #{Exception.message(error)}")
+end
+
+:ok = Snowflex.cancel_statement(MyRepo, handle)
+```
+
+Two things to keep in mind. Nothing on the Elixir side is waiting on a submitted statement, so the only thing bounding it is Snowflake's own `STATEMENT_TIMEOUT_IN_SECONDS` — prefer statements that are safe to leave running unattended. And Snowflake only retains results for a limited window, so a handle queried long after completion may report an error rather than success. These functions do not return rows; use a regular query if you need the result set.
+
 ### Migrations
 
 Migrations are not currently supported by Snowflex.
