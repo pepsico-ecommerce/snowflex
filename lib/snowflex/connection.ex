@@ -98,6 +98,12 @@ defmodule Snowflex.Connection do
     end
   end
 
+  defp dispatch(transport, pid, %{op: :fetch_result, statement: handle}, _params, opts) do
+    with :ok <- ensure_supported(transport, :fetch_result, 3) do
+      transport.fetch_result(pid, handle, opts)
+    end
+  end
+
   defp dispatch(transport, pid, %{op: :cancel, statement: handle}, _params, opts) do
     with :ok <- ensure_supported(transport, :cancel_statement, 3) do
       transport.cancel_statement(pid, handle, opts)
@@ -118,7 +124,7 @@ defmodule Snowflex.Connection do
       {:error,
        Error.exception(
          "transport #{inspect(transport)} does not implement #{fun}/#{arity}, " <>
-           "so asynchronous statement submission is not available"
+           "which #{inspect(transport)} must provide to support this operation"
        )}
     end
   end

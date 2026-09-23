@@ -207,19 +207,24 @@ Ordinary queries occupy a connection for as long as the statement runs. When you
 {:ok, handle} = Snowflex.submit_async(MyRepo, "CALL rebuild_scenarios(?)", [scenario_id])
 ```
 
-Check on it later with the handle, and cancel it if you need to:
+Later, retrieve the result with the handle. `fetch_result/3` answers `{:ok, :running}` until the statement finishes, so you can poll with it alone:
 
 ``` elixir
-case Snowflex.statement_status(MyRepo, handle) do
+case Snowflex.fetch_result(MyRepo, handle) do
   {:ok, :running} -> :still_running
-  {:ok, :succeeded} -> :done
+  {:ok, %Snowflex.Result{rows: rows}} -> rows
   {:error, error} -> Logger.error("statement failed: #{Exception.message(error)}")
 end
+```
 
+Rows decode exactly as they would from `MyRepo.query/3`. If you only care whether the statement finished and not about its rows, `statement_status/3` returns `{:ok, :running | :succeeded}`. To stop a statement, `cancel_statement/3` returns `:ok`:
+
+``` elixir
+{:ok, :running} = Snowflex.statement_status(MyRepo, handle)
 :ok = Snowflex.cancel_statement(MyRepo, handle)
 ```
 
-Two things to keep in mind. Nothing on the Elixir side is waiting on a submitted statement, so the only thing bounding it is Snowflake's own `STATEMENT_TIMEOUT_IN_SECONDS` — prefer statements that are safe to leave running unattended. And Snowflake only retains results for a limited window, so a handle queried long after completion may report an error rather than success. These functions do not return rows; use a regular query if you need the result set.
+Three things to keep in mind. Nothing on the Elixir side waits on a submitted statement, so the only thing bounding it is Snowflake's own statement timeout — prefer statements that are safe to leave running unattended. Snowflake retains results for a limited window, so a handle fetched long after completion returns an error rather than rows. And `fetch_result/3` materializes the entire result set (fetching partitions in parallel), so stream large results with `Snowflex.stream_query/5` instead.
 
 ### Migrations
 

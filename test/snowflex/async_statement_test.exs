@@ -129,7 +129,84 @@ defmodule Snowflex.AsyncStatementTest do
       start_repo()
 
       assert {:error, error} = Snowflex.submit_async(AsyncRepo, "CALL proc()")
-      assert error.message =~ "no statementHandle"
+      assert error.message =~ "no usable statementHandle"
+    end
+
+    test "errors when Snowflake returns a null statementHandle" do
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          json(conn, 202, %{"statementHandle" => nil})
+        end
+      end)
+
+      start_repo()
+
+      assert {:error, error} = Snowflex.submit_async(AsyncRepo, "CALL proc()")
+      assert error.message =~ "no usable statementHandle"
+    end
+
+    test "normalizes an iodata statement to a binary" do
+      test_pid = self()
+
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          send(test_pid, {:submitted, conn.params})
+          json(conn, 202, %{"statementHandle" => @handle})
+        end
+      end)
+
+      start_repo()
+
+      assert {:ok, @handle} = Snowflex.submit_async(AsyncRepo, ["CALL ", "proc()"])
+
+      assert_received {:submitted, params}
+      assert params["statement"] == "CALL proc()"
+    end
+
+    test "sends the statement timeout to Snowflake in seconds" do
+      test_pid = self()
+
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          send(test_pid, {:submitted, conn.params})
+          json(conn, 202, %{"statementHandle" => @handle})
+        end
+      end)
+
+      start_repo()
+
+      assert {:ok, @handle} =
+               Snowflex.submit_async(AsyncRepo, "CALL proc()", [], timeout: :timer.seconds(30))
+
+      assert_received {:submitted, params}
+      assert params["timeout"] == 30
+    end
+
+    test "returns an error rather than exiting when the call times out" do
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          Process.sleep(:infinity)
+          json(conn, 202, %{})
+        end
+      end)
+
+      start_repo()
+
+      # The transport's GenServer.call must not exit: an uncaught exit escapes
+      # Connection.handle_execute and DBConnection re-raises it, so the caller
+      # would never see a Snowflex.Error.
+      assert {:error, %Snowflex.Error{} = error} =
+               Snowflex.submit_async(AsyncRepo, "CALL proc()", [], timeout: 100)
+
+      assert error.message =~ "timed out"
     end
   end
 
@@ -227,13 +304,13 @@ defmodule Snowflex.AsyncStatementTest do
 
   describe "pool occupancy" do
     @tag :capture_log
-    test "a submitted statement does not hold the only pool slot while it runs" do
+    test "submit returns without waiting for the statement to finish" do
       test_pid = self()
 
-      # The submit answers 202 immediately. Any GET on the handle blocks for
-      # longer than the follow-up query's timeout, so if the transport were
-      # polling to completion inside the checked-out connection, the second
-      # query could not get a slot and would time out.
+      # Any GET on the handle blocks far longer than the assertion below
+      # tolerates. Asserting on submit's own elapsed time is what makes this a
+      # real regression guard: a second query afterwards would succeed either
+      # way, because submit_async is awaited before that query even starts.
       ReqTest.stub(MockAsyncHttp, fn conn ->
         cond do
           health_check?(conn) ->
@@ -241,7 +318,7 @@ defmodule Snowflex.AsyncStatementTest do
 
           conn.method == "GET" ->
             send(test_pid, :polled)
-            Process.sleep(5_000)
+            Process.sleep(30_000)
             json(conn, 200, %{})
 
           conn.params["statement"] == "SELECT 2" ->
@@ -258,12 +335,128 @@ defmodule Snowflex.AsyncStatementTest do
 
       start_repo(pool_size: 1)
 
-      assert {:ok, @handle} = Snowflex.submit_async(AsyncRepo, "CALL long_proc()")
+      {elapsed_us, submit_result} =
+        :timer.tc(fn -> Snowflex.submit_async(AsyncRepo, "CALL long_proc()") end)
 
-      assert {:ok, %Snowflex.Result{rows: [[2]]}} =
-               AsyncRepo.query("SELECT 2", [], timeout: 2_000)
+      assert {:ok, @handle} = submit_result
+
+      # Polling to completion would have taken >= 30s.
+      assert elapsed_us < 5_000_000,
+             "submit_async blocked for #{div(elapsed_us, 1000)}ms; it must not wait for the statement"
 
       refute_received :polled
+
+      # And the single pool slot is usable afterwards.
+      assert {:ok, %Snowflex.Result{rows: [[2]]}} =
+               AsyncRepo.query("SELECT 2", [], timeout: 2_000)
+    end
+
+    @tag :capture_log
+    test "async ops reuse the connection held by an enclosing checkout" do
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          json(conn, 202, %{"statementHandle" => @handle})
+        end
+      end)
+
+      start_repo(pool_size: 1)
+
+      # Asking the pool for a second connection here would queue behind the one
+      # checkout already holds, burning the queue timeout and disconnecting the
+      # outer checkout. Returning promptly proves the held connection is reused.
+      {elapsed_us, result} =
+        :timer.tc(fn ->
+          AsyncRepo.checkout(fn -> Snowflex.submit_async(AsyncRepo, "CALL x()") end,
+            timeout: 5_000
+          )
+        end)
+
+      assert {:ok, @handle} = result
+
+      assert elapsed_us < 2_000_000,
+             "checkout + submit_async took #{div(elapsed_us, 1000)}ms; the pool slot was not reused"
+    end
+  end
+
+  describe "fetch_result/3" do
+    test "returns :running before completion and decoded rows after" do
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        cond do
+          health_check?(conn) ->
+            ReqTest.json(conn, %{})
+
+          conn.request_path == "/api/v2/statements/running-handle" ->
+            json(conn, 202, %{})
+
+          true ->
+            json(conn, 200, %{
+              "statementHandle" => @handle,
+              "resultSetMetaData" => %{
+                "rowType" => [
+                  %{"name" => "N", "type" => "fixed"},
+                  %{"name" => "S", "type" => "text"}
+                ],
+                "partitionInfo" => [%{"rowCount" => 1}]
+              },
+              "data" => [["7", "hello"]]
+            })
+        end
+      end)
+
+      start_repo()
+
+      assert {:ok, :running} = Snowflex.fetch_result(AsyncRepo, "running-handle")
+
+      assert {:ok, %Snowflex.Result{} = result} = Snowflex.fetch_result(AsyncRepo, @handle)
+      # Rows decode through the same path as a normal query, so "7" is an integer.
+      assert result.rows == [[7, "hello"]]
+      assert result.columns == ["N", "S"]
+      assert result.num_rows == 1
+    end
+
+    test "merges multi-partition results" do
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        cond do
+          health_check?(conn) ->
+            ReqTest.json(conn, %{})
+
+          conn.params["partition"] == "1" ->
+            json(conn, 200, %{"data" => [["2"]]})
+
+          true ->
+            json(conn, 200, %{
+              "statementHandle" => @handle,
+              "resultSetMetaData" => %{
+                "rowType" => [%{"name" => "N", "type" => "fixed"}],
+                "partitionInfo" => [%{"rowCount" => 1}, %{"rowCount" => 1}]
+              },
+              "data" => [["1"]]
+            })
+        end
+      end)
+
+      start_repo()
+
+      assert {:ok, %Snowflex.Result{rows: rows}} = Snowflex.fetch_result(AsyncRepo, @handle)
+      assert rows == [[1], [2]]
+    end
+
+    test "surfaces a failed statement as an error" do
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          json(conn, 422, %{"code" => "100183", "message" => "Division by zero"})
+        end
+      end)
+
+      start_repo()
+
+      assert {:error, error} = Snowflex.fetch_result(AsyncRepo, @handle)
+      assert error.message == "Division by zero"
+      assert error.code == "100183"
     end
   end
 
@@ -304,6 +497,9 @@ defmodule Snowflex.AsyncStatementTest do
 
       assert {:error, error} = Snowflex.statement_status(AsyncRepo, @handle)
       assert error.message =~ "does not implement statement_status/3"
+
+      assert {:error, error} = Snowflex.fetch_result(AsyncRepo, @handle)
+      assert error.message =~ "does not implement fetch_result/3"
 
       assert {:error, error} = Snowflex.cancel_statement(AsyncRepo, @handle)
       assert error.message =~ "does not implement cancel_statement/3"

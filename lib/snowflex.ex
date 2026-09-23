@@ -25,6 +25,8 @@ defmodule Snowflex do
   alias Snowflex.VariantField
   alias String.Chars
 
+  import Snowflex.Query, only: [is_statement: 1]
+
   require Logger
 
   @conn __MODULE__.Ecto.Adapter.Connection
@@ -376,7 +378,7 @@ defmodule Snowflex do
           opts :: Keyword.t()
         ) :: {:ok, String.t()} | {:error, Error.t()}
   def submit_async(repo, statement, params \\ [], opts \\ [])
-      when is_atom(repo) or is_pid(repo) do
+      when (is_atom(repo) or is_pid(repo)) and is_statement(statement) do
     case run_op(repo, :submit_async, statement, params, opts) do
       {:ok, %Result{query_id: handle}} -> {:ok, handle}
       {:error, error} -> {:error, error}
@@ -400,11 +402,43 @@ defmodule Snowflex do
         ) :: {:ok, :running | :succeeded} | {:error, Error.t()}
   def statement_status(repo, handle, opts \\ [])
       when (is_atom(repo) or is_pid(repo)) and is_binary(handle) do
-    case run_op(repo, :status, handle, [], opts) do
-      {:ok, %Result{metadata: %{"status" => "running"}}} -> {:ok, :running}
-      {:ok, %Result{}} -> {:ok, :succeeded}
-      {:error, error} -> {:error, error}
-    end
+    run_op(repo, :status, handle, [], opts)
+  end
+
+  @doc """
+  Fetches the result of a statement previously submitted with `submit_async/4`.
+
+  Returns `{:ok, :running}` while the statement is still executing, so you can
+  poll with this function alone instead of pairing it with `statement_status/3`.
+  Once the statement has finished, the full `t:Snowflex.Result.t/0` is returned,
+  with rows decoded exactly as `Ecto.Repo.query/4` decodes them.
+
+  The entire result set is materialized (partitions are fetched in parallel), so
+  prefer this for statements returning a bounded number of rows; stream large
+  result sets with `stream_query/5` instead.
+
+  Snowflake only retains a statement's result for a limited period; a handle
+  fetched long after completion returns an error rather than rows.
+
+  ## Examples
+
+      {:ok, handle} = Snowflex.submit_async(MyRepo, "CALL build_report()")
+
+      case Snowflex.fetch_result(MyRepo, handle) do
+        {:ok, :running} -> :not_finished_yet
+        {:ok, %Snowflex.Result{rows: rows}} -> rows
+        {:error, error} -> Logger.error(Exception.message(error))
+      end
+
+  """
+  @spec fetch_result(
+          repo :: Ecto.Repo.t() | pid(),
+          handle :: String.t(),
+          opts :: Keyword.t()
+        ) :: {:ok, Result.t() | :running} | {:error, Error.t()}
+  def fetch_result(repo, handle, opts \\ [])
+      when (is_atom(repo) or is_pid(repo)) and is_binary(handle) do
+    run_op(repo, :fetch_result, handle, [], opts)
   end
 
   @doc """
@@ -429,14 +463,31 @@ defmodule Snowflex do
   # Runs a non-:execute transport operation over the pool, reusing the ordinary
   # execute path so these calls get the same logging, telemetry and error
   # enrichment as a normal query.
+  #
+  # Runs on the connection held by an enclosing Ecto.Repo.checkout/2 when there
+  # is one: asking the pool for a second connection there would queue behind the
+  # one the caller already holds, which at pool_size: 1 exhausts the queue
+  # timeout and disconnects the outer checkout.
   defp run_op(repo, op, statement, params, opts) do
     %{pid: pool, telemetry: telemetry, opts: default_opts} = Adapter.lookup_meta(repo)
     opts = with_log(telemetry, params, opts ++ default_opts)
-    query = %Query{statement: statement, op: op}
+    # Query.new/1 normalizes iodata statements to a binary; building the struct
+    # directly would send an iolist to Snowflake as a JSON array.
+    query = Query.new(statement: statement, op: op)
 
-    case DBConnection.execute(pool, query, params, opts) do
+    pool
+    |> checked_out_conn()
+    |> DBConnection.execute(query, params, opts)
+    |> case do
       {:ok, _query, result} -> {:ok, result}
       {:error, error} -> {:error, error}
+    end
+  end
+
+  defp checked_out_conn(pool) do
+    case Process.get({SQL, pool}) do
+      %DBConnection{} = conn -> conn
+      nil -> pool
     end
   end
 
