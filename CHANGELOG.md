@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Enhancements
+
+- Add `Snowflex.submit_async/4`, `Snowflex.statement_status/3`, `Snowflex.fetch_result/3` and `Snowflex.cancel_statement/3` for fire-and-forget statement submission. `submit_async/4` sends Snowflake's `async=true` query parameter, so the API acknowledges with a statement handle as soon as it accepts the statement instead of holding the response open until the statement finishes. A connection is checked out only for the submission round-trip, so long-running statements no longer occupy a pool slot for their full duration. `fetch_result/3` returns the statement's rows once it completes (and `{:ok, :running}` before that, so it can be used to poll), decoded exactly as `Ecto.Repo.query/4` decodes them. Submitted statements are bounded only by Snowflake's statement timeout, since nothing on the client side waits on them. ([#197](https://github.com/pepsico-ecommerce/snowflex/issues/197))
+- `Snowflex.Transport` gains four optional callbacks — `submit_async/4`, `statement_status/3`, `fetch_result/3` and `cancel_statement/3` — implemented by `Snowflex.Transport.Http`. They are optional, so existing custom transports continue to satisfy the behaviour without change; calling an async function on a transport that does not implement them returns a descriptive `Snowflex.Error` rather than raising `UndefinedFunctionError`.
+- `Snowflex.Transport.Http` now caches its signed JWT for the configured `:token_lifetime` instead of re-signing on every request. Each request previously performed a PEM decode and an RSA private-key operation; this is most noticeable when polling an async statement, where one workflow issues many requests.
+
+### Bug Fixes
+
+- `Snowflex.Transport.Http` sent the `timeout` field of a statement request in milliseconds, but Snowflake defines it in seconds. The default 45-second timeout therefore asked Snowflake to wait 45,000 seconds (about 12.5 hours), effectively disabling the server-side statement timeout; a configured `:timeout` is now converted to seconds. Statements that previously ran unbounded will now be cancelled by Snowflake at the configured timeout.
+- JWT `exp` claims were computed by adding a millisecond `:token_lifetime` to a second-precision timestamp, so tokens advertised an expiry roughly a week away instead of the configured lifetime (10 minutes by default).
+
 ### Breaking Changes
 
 - The minimum supported Req version is now 0.7 (`{:req, "~> 0.7"}`, previously `"~> 0.5"`). Consumers pinned to an older Req should stay on snowflex 1.6.0 until they can upgrade.
