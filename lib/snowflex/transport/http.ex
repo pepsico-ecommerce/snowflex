@@ -935,7 +935,7 @@ defmodule Snowflex.Transport.Http do
   defp fetch_statement(state, statement, params, opts, call_opts \\ []) do
     req_body = %{
       statement: statement,
-      timeout: statement_timeout_seconds(opts[:timeout]),
+      timeout: statement_timeout_seconds(opts[:statement_timeout] || opts[:timeout]),
       database: state.database,
       schema: state.schema,
       warehouse: state.warehouse,

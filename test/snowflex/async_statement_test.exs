@@ -188,6 +188,53 @@ defmodule Snowflex.AsyncStatementTest do
       assert params["timeout"] == 30
     end
 
+    test "bounds the statement with :statement_timeout independently of the round-trip :timeout" do
+      test_pid = self()
+
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          send(test_pid, {:submitted, conn.params})
+          json(conn, 202, %{"statementHandle" => @handle})
+        end
+      end)
+
+      start_repo()
+
+      assert {:ok, @handle} =
+               Snowflex.submit_async(AsyncRepo, "CALL proc()", [],
+                 timeout: :timer.seconds(30),
+                 statement_timeout: :timer.hours(1)
+               )
+
+      # The server-side statement timeout follows :statement_timeout (1h -> 3600s),
+      # not the 30s round-trip :timeout.
+      assert_received {:submitted, params}
+      assert params["timeout"] == 3600
+    end
+
+    test "falls back to :timeout for the statement timeout when :statement_timeout is absent" do
+      test_pid = self()
+
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          send(test_pid, {:submitted, conn.params})
+          json(conn, 202, %{"statementHandle" => @handle})
+        end
+      end)
+
+      start_repo()
+
+      assert {:ok, @handle} =
+               Snowflex.submit_async(AsyncRepo, "CALL proc()", [], timeout: :timer.seconds(45))
+
+      assert_received {:submitted, params}
+      assert params["timeout"] == 45
+    end
+
     test "returns an error rather than exiting when the call times out" do
       ReqTest.stub(MockAsyncHttp, fn conn ->
         if health_check?(conn) do

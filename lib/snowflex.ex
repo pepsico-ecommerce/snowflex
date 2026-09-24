@@ -356,13 +356,27 @@ defmodule Snowflex do
   Options are merged over the repo's configured connection options.
 
     * `:timeout` - bounds the submission round-trip only, *not* the statement's
-      own execution.
+      own execution. Because `async=true` makes Snowflake acknowledge the
+      submission as soon as it accepts the statement, this normally elapses in
+      milliseconds regardless of how long the statement runs.
+    * `:statement_timeout` - bounds the statement's *own* server-side execution
+      via `STATEMENT_TIMEOUT_IN_SECONDS` (given here in milliseconds, converted
+      to seconds). Defaults to `:timeout` when omitted. For a fire-and-forget
+      submission the two bounds are independent — the round-trip returns a
+      handle in milliseconds while the statement may run for minutes — so set
+      this to the maximum the statement itself may take.
     * `:query_tag` - sets Snowflake's `QUERY_TAG`, useful for correlating the
       statement later.
 
   ## Examples
 
-      {:ok, handle} = Snowflex.submit_async(MyRepo, "CALL long_running_proc()")
+      # A statement that may run for up to an hour, while the submission itself
+      # is bounded to a 30s round-trip.
+      {:ok, handle} =
+        Snowflex.submit_async(MyRepo, "CALL long_running_proc()", [],
+          timeout: :timer.seconds(30),
+          statement_timeout: :timer.hours(1)
+        )
 
       case Snowflex.statement_status(MyRepo, handle) do
         {:ok, :running} -> :still_going
