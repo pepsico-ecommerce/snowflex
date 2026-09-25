@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-09-25
+
 ### Enhancements
 
-- `Snowflex.submit_async/4` accepts a `:statement_timeout` option (milliseconds) that bounds the statement's own server-side execution (`STATEMENT_TIMEOUT_IN_SECONDS`) independently of `:timeout`, which bounds only the submission round-trip. For a fire-and-forget submission these two bounds are genuinely independent — `async=true` returns a statement handle in milliseconds while the statement itself may run for minutes — so a caller can hold the round-trip to a short timeout while letting the statement run much longer. `:statement_timeout` defaults to `:timeout` when omitted, so existing callers are unaffected.
+- `Snowflex.submit_async/4` accepts a `:statement_timeout` option (milliseconds) that bounds the statement's own server-side execution (`STATEMENT_TIMEOUT_IN_SECONDS`) independently of `:timeout`, which bounds only the submission round-trip. For a fire-and-forget submission these two bounds are genuinely independent — `async=true` returns a statement handle in milliseconds while the statement itself may run for minutes — so a caller can hold the round-trip to a short timeout while letting the statement run much longer. `:statement_timeout` defaults to `:timeout` when omitted, so existing callers are unaffected. ([#200](https://github.com/pepsico-ecommerce/snowflex/pull/200))
 
 ## [1.7.0] - 2026-09-24
 
