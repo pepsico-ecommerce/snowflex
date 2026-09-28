@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `Snowflex.Transport.Http` could let its cached JWT expire partway through a long call. The token was only re-signed when less than 30 seconds remained, but a call's async polling and partition fetches all reuse the token for up to the call's `:timeout`, so Snowflake rejected a later request with `390198` while the statement was still running. The token is now re-signed at the start of any call it cannot outlast (remaining lifetime less than the call's `:timeout` plus 30 seconds), and `:infinity` calls always start with a new token. When `:timeout` is long, set `:token_lifetime` near Snowflake's 1 hour maximum (e.g. `:timer.minutes(55)`) so the token stays cached across calls.
+
 ## [1.7.1] - 2026-09-25
 
 ### Enhancements

@@ -22,7 +22,12 @@ defmodule Snowflex.Transport.Http do
   * `:warehouse` - Default warehouse to use
   * `:role` - Default role to use
   * `:timeout` - Query timeout in milliseconds (default: 45 seconds)
-  * `:token_lifetime` - JWT token lifetime in milliseconds (default: 10 minutes)
+  * `:token_lifetime` - JWT token lifetime in milliseconds (default: 10 minutes).
+    The signed token is cached and re-signed at the start of any call it cannot
+    outlast: when less than that call's `:timeout` plus 30 seconds remains. If
+    `:timeout` plus 30 seconds reaches the lifetime, every call signs a new token.
+    For long timeouts, set a lifetime near Snowflake's 1 hour maximum (e.g.
+    `:timer.minutes(55)`) so the token stays cached across calls.
   * `:private_key_password` - Password for the private key (if encrypted)
   * `:async_poll_interval` - Interval in milliseconds to poll for async execution status (default: 1000)
   * `:max_retries` - Maximum retry attempts for rate limits (default: 3)
@@ -115,8 +120,9 @@ defmodule Snowflex.Transport.Http do
   @default_token_lifetime :timer.minutes(10)
   @default_timeout :timer.seconds(45)
   @call_timeout_grace :timer.seconds(5)
-  # Refresh the cached JWT this long before it expires, so a request never goes
-  # out with a token that lapses in flight.
+  # Grace on top of a call's timeout when deciding whether the cached JWT can
+  # outlast that call. Covers Req retries, the +30s task extension in
+  # gather_results/3, and clock skew between us and Snowflake.
   @token_refresh_margin :timer.seconds(30)
   defmodule State do
     @moduledoc false
@@ -335,13 +341,13 @@ defmodule Snowflex.Transport.Http do
   end
 
   def handle_call(:client, _from, state) do
-    state = refresh_token(state)
+    state = refresh_token(state, state.timeout)
     {:reply, build_req_client(state), state}
   end
 
   @impl GenServer
   def handle_call({:execute, statement, params, opts}, _from, state) do
-    state = refresh_token(state)
+    state = refresh_token(state, opts[:timeout])
 
     with {:ok, status, body} <- fetch_statement(state, statement, params, opts),
          #  After 45 seconds, Snowflake will return a 202 status code and a body with a statementHandle
@@ -360,7 +366,7 @@ defmodule Snowflex.Transport.Http do
   end
 
   def handle_call({:declare, statement, params, opts}, _from, state) do
-    state = refresh_token(state)
+    state = refresh_token(state, opts[:timeout])
 
     # Long-running statements answer 202 before the result set exists, so poll
     # to completion (like :execute does) before reading partition metadata.
@@ -399,7 +405,7 @@ defmodule Snowflex.Transport.Http do
   # :current_statement alone: that field belongs to the cursor path, and
   # overwriting it would corrupt an in-flight stream on the same connection.
   def handle_call({:submit_async, statement, params, opts}, _from, state) do
-    state = refresh_token(state)
+    state = refresh_token(state, opts[:timeout])
 
     reply =
       case fetch_statement(state, statement, params, opts, async?: true) do
@@ -421,17 +427,17 @@ defmodule Snowflex.Transport.Http do
   end
 
   def handle_call({:statement_status, handle, opts}, _from, state) do
-    state = refresh_token(state)
+    state = refresh_token(state, opts[:timeout])
     {:reply, request_statement_status(state, handle, opts), state, :hibernate}
   end
 
   def handle_call({:fetch_result, handle, opts}, _from, state) do
-    state = refresh_token(state)
+    state = refresh_token(state, opts[:timeout])
     {:reply, request_result(state, handle, opts), state, :hibernate}
   end
 
   def handle_call({:cancel_statement, handle, opts}, _from, state) do
-    state = refresh_token(state)
+    state = refresh_token(state, opts[:timeout])
     {:reply, request_cancel(state, handle, opts), state, :hibernate}
   end
 
@@ -445,7 +451,7 @@ defmodule Snowflex.Transport.Http do
         } = state
       )
       when current_partition <= max_partition do
-    state = refresh_token(state)
+    state = refresh_token(state, opts[:timeout])
 
     case fetch_partition(state, current_statement, current_partition, opts) do
       {:ok, result} ->
@@ -675,7 +681,7 @@ defmodule Snowflex.Transport.Http do
 
   defp init_state(validated_opts, private_key) do
     {:ok,
-     refresh_token(%State{
+     %State{
        account_name: Keyword.fetch!(validated_opts, :account_name),
        username: Keyword.fetch!(validated_opts, :username),
        public_key_fingerprint: Keyword.fetch!(validated_opts, :public_key_fingerprint),
@@ -694,7 +700,8 @@ defmodule Snowflex.Transport.Http do
        retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000),
        connect_options: Keyword.get(validated_opts, :connect_options, []),
        req_options: validated_opts |> Keyword.get(:req_options, []) |> normalize_finch_option()
-     })}
+     }
+     |> then(&refresh_token(&1, &1.timeout))}
   end
 
   # Req 0.7 deprecated setting `:finch` to a bare pool name in favor of
@@ -752,22 +759,36 @@ defmodule Snowflex.Transport.Http do
   # Token helpers
 
   # Signing a JWT costs a PEM decode plus an RSA private-key operation, so the
-  # token is cached for its lifetime instead of being rebuilt per request. This
-  # matters most for async polling, where one logical workflow issues many
-  # requests. Callers that cannot update the GenServer state (the parallel
-  # partition fetches, and the public options/1) reuse whatever is cached.
-  defp refresh_token(%State{} = state) do
+  # token is cached instead of being rebuilt per request. This matters most for
+  # async polling, where one logical workflow issues many requests. Callers that
+  # cannot update the GenServer state (the parallel partition fetches, and the
+  # public options/1) reuse whatever is cached.
+  #
+  # A call can run for up to its timeout (polling and partition fetches all
+  # reuse the token), so the cached token is only kept when it outlives the
+  # whole call plus @token_refresh_margin. With a timeout close to (or above)
+  # :token_lifetime this re-signs on every call, which is correct, just less
+  # cached. An :infinity call cannot be bounded, so it always starts with a
+  # freshly signed token.
+  defp refresh_token(%State{auth_token: nil} = state, _timeout), do: force_refresh_token(state)
+  defp refresh_token(%State{} = state, :infinity), do: force_refresh_token(state)
+
+  defp refresh_token(%State{} = state, timeout) when is_integer(timeout) do
     now = System.system_time(:millisecond)
 
-    if is_nil(state.auth_token) or now >= state.auth_token_expires_at - @token_refresh_margin do
-      %{
-        state
-        | auth_token: generate_token(state),
-          auth_token_expires_at: now + token_lifetime(state)
-      }
+    if now + timeout + @token_refresh_margin >= state.auth_token_expires_at do
+      force_refresh_token(state)
     else
       state
     end
+  end
+
+  defp force_refresh_token(%State{} = state) do
+    %{
+      state
+      | auth_token: generate_token(state),
+        auth_token_expires_at: System.system_time(:millisecond) + token_lifetime(state)
+    }
   end
 
   defp token_lifetime(%State{token_lifetime: lifetime}), do: lifetime
