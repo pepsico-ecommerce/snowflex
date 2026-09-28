@@ -124,6 +124,8 @@ defmodule Snowflex.Transport.Http do
   # outlast that call. Covers Req retries, the +30s task extension in
   # gather_results/3, and clock skew between us and Snowflake.
   @token_refresh_margin :timer.seconds(30)
+  # Snowflake's "JWT token is invalid / expired" error code.
+  @expired_token_codes ["390198"]
   defmodule State do
     @moduledoc false
     @derive {Inspect, except: [:private_key, :private_key_password, :auth_token]}
@@ -510,9 +512,14 @@ defmodule Snowflex.Transport.Http do
   defp await_async_execution(state, 202, %{"statementHandle" => statement_handle}) do
     url = "/api/v2/statements/#{statement_handle}"
 
-    req_client = build_req_client(state)
+    # Keep the (possibly re-signed) state so later polls reuse the new token
+    # instead of each tripping over the expired one.
+    {response, state} =
+      with_token_retry(state, fn state ->
+        Req.get(build_req_client(state), url: url, receive_timeout: state.timeout)
+      end)
 
-    case Req.get(req_client, url: url, receive_timeout: state.timeout) do
+    case response do
       {:ok, %{status: 202, body: body}} ->
         Process.sleep(state.async_poll_interval)
         await_async_execution(state, 202, body)
@@ -769,7 +776,7 @@ defmodule Snowflex.Transport.Http do
   # whole call plus @token_refresh_margin. With a timeout close to (or above)
   # :token_lifetime this re-signs on every call, which is correct, just less
   # cached. An :infinity call cannot be bounded, so it always starts with a
-  # freshly signed token.
+  # freshly signed token; with_token_retry/2 covers the rest.
   defp refresh_token(%State{auth_token: nil} = state, _timeout), do: force_refresh_token(state)
   defp refresh_token(%State{} = state, :infinity), do: force_refresh_token(state)
 
@@ -1027,9 +1034,17 @@ defmodule Snowflex.Transport.Http do
   defp fetch_partition(state, statement_handle, partition_index, opts) do
     url = "/api/v2/statements/#{statement_handle}"
     params = %{partition: partition_index}
-    req_client = build_req_client(state)
 
-    case Req.get(req_client, url: url, params: params, receive_timeout: opts[:timeout]) do
+    {response, _state} =
+      with_token_retry(state, fn state ->
+        Req.get(build_req_client(state),
+          url: url,
+          params: params,
+          receive_timeout: opts[:timeout]
+        )
+      end)
+
+    case response do
       {:ok, %{status: status, body: partition_body}} when status in 200..299 ->
         {:ok, partition_body}
 
@@ -1081,16 +1096,19 @@ defmodule Snowflex.Transport.Http do
   end
 
   defp get_statement(state, handle, opts) do
-    req_client = build_req_client(state)
-
     # Snowflake keeps answering 202 for as long as the statement runs, so a
     # transient-retry here would burn the caller's whole timeout budget
     # re-asking a question that was already answered. Ask exactly once.
-    case Req.get(req_client,
-           url: statement_url(handle),
-           receive_timeout: opts[:timeout],
-           retry: false
-         ) do
+    {response, _state} =
+      with_token_retry(state, fn state ->
+        Req.get(build_req_client(state),
+          url: statement_url(handle),
+          receive_timeout: opts[:timeout],
+          retry: false
+        )
+      end)
+
+    case response do
       {:ok, %{status: 202, body: body}} -> {:ok, :running, body}
       {:ok, %{status: status, body: body}} when status in 200..299 -> {:ok, :succeeded, body}
       {:ok, response} -> {:error, statement_error(response, handle, opts)}
@@ -1099,12 +1117,15 @@ defmodule Snowflex.Transport.Http do
   end
 
   defp request_cancel(state, handle, opts) do
-    req_client = build_req_client(state)
+    {response, _state} =
+      with_token_retry(state, fn state ->
+        Req.post(build_req_client(state),
+          url: statement_url(handle) <> "/cancel",
+          receive_timeout: opts[:timeout]
+        )
+      end)
 
-    case Req.post(req_client,
-           url: statement_url(handle) <> "/cancel",
-           receive_timeout: opts[:timeout]
-         ) do
+    case response do
       {:ok, %{status: status, body: body}} when status in 200..299 ->
         {:ok, handle_result(body, handle)}
 
@@ -1117,6 +1138,30 @@ defmodule Snowflex.Transport.Http do
   end
 
   defp statement_url(handle), do: "/api/v2/statements/#{handle}"
+
+  # Backstop for a token that expires mid-call despite refresh_token/2 (e.g. an
+  # :infinity call, or clock skew). Only wraps requests addressed to an existing
+  # statement handle, so a retry never resubmits the statement. Retries at most
+  # once; a second rejection takes the caller's normal error path. Returns the
+  # re-signed state so pollers can keep using the new token.
+  defp with_token_retry(state, request_fun) do
+    case request_fun.(state) do
+      {:ok, %{body: %{"code" => code}}} = response ->
+        if to_string(code) in @expired_token_codes do
+          Logger.warning(
+            "Snowflake rejected an expired JWT (#{code}); re-signing and retrying once"
+          )
+
+          state = force_refresh_token(state)
+          {request_fun.(state), state}
+        else
+          {response, state}
+        end
+
+      response ->
+        {response, state}
+    end
+  end
 
   # Snowflake's `timeout` request field is a number of SECONDS, while every
   # Snowflex timeout option is in milliseconds. Passing the millisecond value
