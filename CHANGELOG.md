@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Enhancements
 
-- `Snowflex.Transport.Http` now recovers from a JWT that expires mid-call. When Snowflake rejects a request with `390198`, the transport signs a new token and retries that request once, but only for requests addressed to an existing statement handle: async polls, partition fetches, `statement_status/3`, `fetch_result/3` and `cancel_statement/3`. Statement submission is never retried, so a statement is never resubmitted. A retry logs a warning. If the retried request is rejected too, the error is returned as before.
+- `Snowflex.Transport.Http` now recovers from a JWT that expires mid-call. When Snowflake rejects a request with `390198`, the transport signs a new token and retries that request once, but only for requests addressed to an existing statement handle: async polls, partition fetches, `statement_status/3`, `fetch_result/3` and `cancel_statement/3`. A token re-signed while polling is kept for that call's partition fetches and for later calls on the connection. Statement submission is never retried, so a statement is never resubmitted. A retry logs a warning. If the retried request is rejected too, the error is returned as before.
 
 ### Bug Fixes
 
