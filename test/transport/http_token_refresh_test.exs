@@ -203,6 +203,41 @@ defmodule Snowflex.Transport.HttpTokenRefreshTest do
       assert iat(retried) > iat(rejected)
     end
 
+    test "carries the token re-signed while polling into partition fetches and later calls" do
+      multi_partition =
+        result_body()
+        |> put_in(["resultSetMetaData", "partitionInfo"], [%{"rowCount" => 1}, %{"rowCount" => 1}])
+
+      stub_sequence([
+        {202, %{"statementHandle" => @handle}},
+        {401, @expired},
+        {200, multi_partition},
+        {200, %{"data" => [["2"]]}},
+        {200, result_body()}
+      ])
+
+      pid = start_transport([])
+      next_second()
+
+      assert {:ok, %Snowflex.Result{rows: [["1"], ["2"]]}} =
+               Http.execute_statement(pid, "CALL slow()", %{}, [])
+
+      assert {:ok, _result} = Http.execute_statement(pid, "SELECT 2", %{}, [])
+
+      assert [
+               {"POST", _, submit_token},
+               {"GET", "", rejected},
+               {"GET", "", retried},
+               {"GET", "partition=1", partition_token},
+               {"POST", _, next_call_token}
+             ] = requests()
+
+      assert rejected == submit_token
+      assert iat(retried) > iat(rejected)
+      assert partition_token == retried
+      assert next_call_token == retried
+    end
+
     test "retries only once" do
       stub_sequence([
         {202, %{"statementHandle" => @handle}},

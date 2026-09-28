@@ -354,7 +354,9 @@ defmodule Snowflex.Transport.Http do
     with {:ok, status, body} <- fetch_statement(state, statement, params, opts),
          #  After 45 seconds, Snowflake will return a 202 status code and a body with a statementHandle
          #  We need to poll for the result set
-         {:ok, body} <- await_async_execution(state, status, body),
+         # Polling may re-sign an expired token; carry that state forward so the
+         # partition fetches (and later calls) use the new token.
+         {:ok, body, state} <- await_async_execution(state, status, body),
          # Once we have the initial body, we might need to make additional requests
          # to gather the partitions
          # We will reduce over the partitions to get the full result set
@@ -377,7 +379,7 @@ defmodule Snowflex.Transport.Http do
           %{
             "statementHandle" => statement_handle,
             "resultSetMetaData" => %{"partitionInfo" => partitions} = metadata
-          }} <- await_async_execution(state, status, body) do
+          }, state} <- await_async_execution(state, status, body) do
       {:reply, {:ok, length(partitions) - 1},
        %{
          state
@@ -389,7 +391,7 @@ defmodule Snowflex.Transport.Http do
       {:error, error} ->
         {:reply, {:error, error}, state}
 
-      {:ok, body} ->
+      {:ok, body, _state} ->
         error =
           Error.exception(
             "statement did not return a partitioned result set " <>
@@ -512,8 +514,9 @@ defmodule Snowflex.Transport.Http do
   defp await_async_execution(state, 202, %{"statementHandle" => statement_handle}) do
     url = "/api/v2/statements/#{statement_handle}"
 
-    # Keep the (possibly re-signed) state so later polls reuse the new token
-    # instead of each tripping over the expired one.
+    # Keep the (possibly re-signed) state so later polls, and the caller's
+    # follow-up requests, reuse the new token instead of each tripping over the
+    # expired one.
     {response, state} =
       with_token_retry(state, fn state ->
         Req.get(build_req_client(state), url: url, receive_timeout: state.timeout)
@@ -525,14 +528,14 @@ defmodule Snowflex.Transport.Http do
         await_async_execution(state, 202, body)
 
       {:ok, %{status: status, body: body}} when status in 200..299 ->
-        {:ok, body}
+        {:ok, body, state}
 
       {:ok, %{body: %{"code" => code, "message" => message}}} ->
         {:error, %Error{message: String.replace(message, ~r/\n/, " "), code: code}}
     end
   end
 
-  defp await_async_execution(_state, _status, body), do: {:ok, body}
+  defp await_async_execution(state, _status, body), do: {:ok, body, state}
 
   defp gather_results(state, %{"statementHandles" => statement_handles}, opts) do
     max_concurrency = System.schedulers_online()
@@ -543,7 +546,7 @@ defmodule Snowflex.Transport.Http do
       statement_handles,
       fn handle ->
         case await_async_execution(state, 202, %{"statementHandle" => handle}) do
-          {:ok, body} -> gather_results(state, body, opts)
+          {:ok, body, state} -> gather_results(state, body, opts)
           {:error, error} -> {:error, error}
         end
       end,
