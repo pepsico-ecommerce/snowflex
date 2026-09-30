@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-09-30
+
 ### Enhancements
 
-- `Snowflex.Transport.Http` now recovers from a JWT that expires mid-call. When Snowflake rejects a request with `390198`, the transport signs a new token and retries that request once, but only for requests addressed to an existing statement handle: async polls, partition fetches, `statement_status/3`, `fetch_result/3` and `cancel_statement/3`. A token re-signed while polling is kept for that call's partition fetches and for later calls on the connection. Statement submission is never retried, so a statement is never resubmitted. A retry logs a warning. If the retried request is rejected too, the error is returned as before.
+- `Snowflex.Transport.Http` now recovers from a JWT that expires mid-call. When Snowflake rejects a request with `390198`, the transport signs a new token and retries that request once, but only for requests addressed to an existing statement handle: async polls, partition fetches, `statement_status/3`, `fetch_result/3` and `cancel_statement/3`. A token re-signed while polling is kept for that call's partition fetches and for later calls on the connection. Statement submission is never retried, so a statement is never resubmitted. A retry logs a warning. If the retried request is rejected too, the error is returned as before. ([#202](https://github.com/pepsico-ecommerce/snowflex/pull/202))
 
 ### Bug Fixes
 
-- `Snowflex.Transport.Http` could let its cached JWT expire partway through a long call. The token was only re-signed when less than 30 seconds remained, but a call's async polling and partition fetches all reuse the token for up to the call's `:timeout`, so Snowflake rejected a later request with `390198` while the statement was still running. The token is now re-signed at the start of any call it cannot outlast (remaining lifetime less than the call's `:timeout` plus 30 seconds), and `:infinity` calls always start with a new token. When `:timeout` is long, set `:token_lifetime` near Snowflake's 1 hour maximum (e.g. `:timer.minutes(55)`) so the token stays cached across calls.
+- `Snowflex.Transport.Http` could let its cached JWT expire partway through a long call. The token was only re-signed when less than 30 seconds remained, but a call's async polling and partition fetches all reuse the token for up to the call's `:timeout`, so Snowflake rejected a later request with `390198` while the statement was still running. The token is now re-signed at the start of any call it cannot outlast (remaining lifetime less than the call's `:timeout` plus 30 seconds), and `:infinity` calls always start with a new token. When `:timeout` is long, set `:token_lifetime` near Snowflake's 1 hour maximum (e.g. `:timer.minutes(55)`) so the token stays cached across calls. ([#202](https://github.com/pepsico-ecommerce/snowflex/pull/202))
 
 ## [1.7.1] - 2026-09-25
 
