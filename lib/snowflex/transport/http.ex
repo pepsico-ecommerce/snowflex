@@ -333,11 +333,7 @@ defmodule Snowflex.Transport.Http do
     with {:ok, validated_opts, private_key} <- validate_and_read_private_key(opts),
          {:ok, opts_with_fingerprint} <- resolve_fingerprint(validated_opts, private_key),
          {:ok, state} <- init_state(opts_with_fingerprint, private_key) do
-      if state.lazy do
-        {:ok, state}
-      else
-        check_connection(state)
-      end
+      maybe_check_connection(state)
     end
   end
 
@@ -756,6 +752,9 @@ defmodule Snowflex.Transport.Http do
         {:stop, error}
     end
   end
+
+  defp maybe_check_connection(%State{lazy: true} = state), do: {:ok, state}
+  defp maybe_check_connection(state), do: check_connection(state)
 
   # Token helpers
 
