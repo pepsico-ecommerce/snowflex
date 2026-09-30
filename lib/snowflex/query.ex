@@ -1,6 +1,12 @@
 defmodule Snowflex.Query do
   @moduledoc """
   Snowflake implementation of `DBConnection.Query`.
+
+  `:op` selects which transport operation the query runs. It is `:execute` for
+  ordinary statements. For the async operations (`:submit_async`, `:status`,
+  `:fetch_result` and `:cancel`) `:statement` holds a statement handle rather
+  than SQL, so that the handle reaches query logging and telemetry the same way
+  a statement does.
   """
 
   alias String.Chars
@@ -9,7 +15,8 @@ defmodule Snowflex.Query do
     :statement,
     :transport,
     name: "",
-    cache: :reference
+    cache: :reference,
+    op: :execute
   ]
 
   defguard is_statement(statement) when is_list(statement) or is_binary(statement)

@@ -7,7 +7,8 @@ defmodule Snowflex.Result do
   * `:columns` - List of column names returned in the result set
   * `:rows` - List of tuples containing the row data
   * `:num_rows` - Number of rows in the result set
-  * `:metadata` - Additional metadata about the query execution
+  * `:metadata` - Snowflake's `resultSetMetaData` for the statement, as a map
+    (it defaults to `[]` when no statement has produced metadata yet)
   * `:messages` - Any messages returned by Snowflake during query execution
   * `:query` - The SQL statement that was executed
   * `:query_id` - The ID of the query that was executed
@@ -28,7 +29,7 @@ defmodule Snowflex.Result do
           columns: [String.t()] | nil,
           rows: [tuple()] | nil,
           num_rows: integer(),
-          metadata: [map()],
+          metadata: map() | [map()],
           messages: [map()],
           query: Snowflex.Query.t() | nil,
           query_id: String.t() | nil,
