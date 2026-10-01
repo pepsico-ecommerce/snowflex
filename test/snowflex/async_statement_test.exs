@@ -3,10 +3,13 @@ defmodule Snowflex.AsyncStatementTest do
 
   import Req.Test, only: [set_req_test_to_shared: 1]
 
+  alias Ecto.Adapter
   alias Plug.Conn
   alias Req.Test, as: ReqTest
+  alias Snowflex.Query
 
   @handle "01b7e043-0206-7a43-0008-8b8300073d86"
+  @request_id "ea7b46ed-bdc1-8c32-d593-764fcad64e83"
 
   setup :set_req_test_to_shared
 
@@ -72,6 +75,126 @@ defmodule Snowflex.AsyncStatementTest do
       assert params["statement"] == "CALL long_proc()"
       assert query_string =~ "async=true"
       refute_received {:polled, _path}
+    end
+
+    test "resubmits a lost response only on explicit retry with the original identity and body" do
+      test_pid = self()
+
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          query = URI.decode_query(conn.query_string)
+          send(test_pid, {:submission, query, conn.body_params})
+
+          if query["retry"] == "true" do
+            json(conn, 202, %{"statementHandle" => @handle})
+          else
+            # The remote accepted the request, but its acknowledgement was lost.
+            ReqTest.transport_error(conn, :closed)
+          end
+        end
+      end)
+
+      start_repo(req_options: [plug: {Req.Test, MockAsyncHttp}, retry: :transient])
+      opts = [request_id: @request_id, query_tag: "operation-1", statement_timeout: 60_000]
+
+      assert {:error, error} = Snowflex.submit_async(AsyncRepo, "CALL proc(?)", ["arg"], opts)
+      assert error.code == "HTTP_ERROR"
+      assert error.metadata.request_id == @request_id
+      assert_received {:submission, initial_query, initial_body}
+      assert initial_query == %{"async" => "true", "requestId" => @request_id}
+      refute_received {:submission, _, _}
+
+      assert {:ok, @handle} =
+               Snowflex.submit_async(AsyncRepo, "CALL proc(?)", ["arg"], [retry: true] ++ opts)
+
+      assert_received {:submission, retry_query, retry_body}
+      assert retry_query == Map.put(initial_query, "retry", "true")
+      assert retry_body == initial_body
+      refute_received {:submission, _, _}
+    end
+
+    test "rejects invalid identity and retry options without submitting" do
+      test_pid = self()
+
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        unless health_check?(conn), do: send(test_pid, :unexpected_submission)
+        ReqTest.json(conn, %{})
+      end)
+
+      start_repo()
+
+      for id <- [
+            nil,
+            123,
+            "",
+            "not-a-uuid",
+            String.replace(@request_id, "-", ""),
+            @request_id <> "\n",
+            "gg7b46ed-bdc1-8c32-d593-764fcad64e83"
+          ] do
+        assert {:error, error} =
+                 Snowflex.submit_async(AsyncRepo, "CALL proc()", [], request_id: id)
+
+        assert error.message =~ ":request_id must be a UUID"
+      end
+
+      assert {:error, error} = Snowflex.submit_async(AsyncRepo, "CALL proc()", [], retry: true)
+      assert error.message =~ "requires the original :request_id"
+
+      for retry <- [nil, "true", 1, :transient] do
+        assert {:error, error} =
+                 Snowflex.submit_async(AsyncRepo, "CALL proc()", [],
+                   request_id: @request_id,
+                   retry: retry
+                 )
+
+        assert error.message =~ ":retry must be a boolean"
+      end
+
+      refute_received :unexpected_submission
+    end
+
+    test "retains caller identity in transport acknowledgement when response omits requestId" do
+      test_pid = self()
+      request_id = String.upcase(@request_id)
+
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn) do
+          ReqTest.json(conn, %{})
+        else
+          send(test_pid, {:query, URI.decode_query(conn.query_string)})
+          json(conn, 200, %{"statementHandle" => @handle, "sqlState" => "00000"})
+        end
+      end)
+
+      start_repo()
+      %{pid: pool} = Adapter.lookup_meta(AsyncRepo)
+      query = Query.new(statement: "CALL proc()", op: :submit_async)
+
+      assert {:ok, _, result} =
+               DBConnection.execute(pool, query, [], request_id: request_id, retry: false)
+
+      assert result.query_id == @handle
+      assert result.request_id == request_id
+      assert result.sql_state == "00000"
+      assert_received {:query, %{"async" => "true", "requestId" => ^request_id} = params}
+      refute Map.has_key?(params, "retry")
+    end
+
+    test "preserves request identity when acknowledgement has no usable handle" do
+      ReqTest.stub(MockAsyncHttp, fn conn ->
+        if health_check?(conn), do: ReqTest.json(conn, %{}), else: json(conn, 202, %{})
+      end)
+
+      start_repo()
+
+      assert {:error, error} =
+               Snowflex.submit_async(AsyncRepo, "CALL proc()", [], request_id: @request_id)
+
+      assert error.metadata.request_id == @request_id
+      assert error.message =~ "no usable statementHandle"
     end
 
     test "passes bindings and query_tag through" do
