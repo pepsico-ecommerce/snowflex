@@ -220,7 +220,51 @@ defmodule Snowflex.Transport.Http do
   @impl Snowflex.Transport
   def submit_async(pid, statement, params, opts) do
     opts = add_default_timeout(opts)
-    call(pid, {:submit_async, statement, params, opts}, statement, opts)
+
+    with :ok <- validate_submission_identity(opts) do
+      pid
+      |> call({:submit_async, statement, params, opts}, statement, opts)
+      |> put_submission_identity(opts[:request_id])
+    end
+  end
+
+  # Validate before dispatch so a malformed identity cannot submit a statement.
+  defp validate_submission_identity(opts) do
+    request_id = opts[:request_id]
+    retry = Keyword.get(opts, :retry, false)
+
+    cond do
+      Keyword.has_key?(opts, :request_id) and not valid_request_id?(request_id) ->
+        {:error,
+         Error.exception(
+           ":request_id must be a UUID string (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+         )}
+
+      not is_boolean(retry) ->
+        {:error, Error.exception(":retry must be a boolean")}
+
+      retry and is_nil(request_id) ->
+        {:error, Error.exception(":retry requires the original :request_id")}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp valid_request_id?(id) when is_binary(id) do
+    Regex.match?(~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i, id)
+  end
+
+  defp valid_request_id?(_id), do: false
+
+  defp put_submission_identity(reply, nil), do: reply
+
+  defp put_submission_identity({:ok, %Result{} = result}, request_id) do
+    {:ok, %{result | request_id: request_id}}
+  end
+
+  defp put_submission_identity({:error, %Error{} = error}, request_id) do
+    {:error, %{error | metadata: Map.put(error.metadata || %{}, :request_id, request_id)}}
   end
 
   @impl Snowflex.Transport
@@ -984,7 +1028,11 @@ defmodule Snowflex.Transport.Http do
     # finishes (or until its own ~45s cutoff). Req treats an empty *list* as
     # "no params" and leaves the URL untouched; an empty map would take the
     # encode path instead.
-    query_params = if call_opts[:async?], do: %{async: true}, else: []
+    query_params = if call_opts[:async?], do: submission_query_params(opts), else: []
+
+    # Recovery owns resubmission. Do not let Req repeat an async POST (including
+    # one configured with retry: :transient) without an explicit caller retry.
+    req_client = if call_opts[:async?], do: Req.merge(req_client, retry: false), else: req_client
 
     case Req.post(req_client,
            url: url,
@@ -1032,6 +1080,12 @@ defmodule Snowflex.Transport.Http do
            metadata: %{statement: statement, request: req_body, opts: opts}
          }}
     end
+  end
+
+  defp submission_query_params(opts) do
+    params = [async: true]
+    params = if opts[:request_id], do: params ++ [requestId: opts[:request_id]], else: params
+    if opts[:retry], do: params ++ [retry: true], else: params
   end
 
   defp fetch_partition(state, statement_handle, partition_index, opts) do
