@@ -367,6 +367,15 @@ defmodule Snowflex do
       this to the maximum the statement itself may take.
     * `:query_tag` - sets Snowflake's `QUERY_TAG`, useful for correlating the
       statement later.
+    * `:request_id` - a caller-generated UUID string sent as the SQL API
+      `requestId`.
+    * `:retry` - boolean, default `false`. Set to `true` only when resubmitting
+      the original request with its original `:request_id`. Missing/invalid UUIDs
+      and non-boolean retry values return an error before submission.
+
+  ## Durable submission and recovery
+
+  Snowflake supports idempotent requests using the `request_id`.  For more information, see [Snowflake's resubmission contract](https://docs.snowflake.com/en/developer-guide/sql-api/submitting-requests#resubmitting-a-request-to-execute-sql-statements).
 
   ## Examples
 
