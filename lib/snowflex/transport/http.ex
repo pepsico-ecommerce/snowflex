@@ -35,6 +35,7 @@ defmodule Snowflex.Transport.Http do
   * `:retry_max_delay` - Maximum delay between retries in milliseconds (default: 8000)
   * `:connect_options` - Connection options for Finch pool configuration. Ignored when a `:finch` instance is supplied via `:req_options`, because Req forbids setting both.
   * `:req_options` - Additional options to pass to `Req.new/1` (e.g., `:plug` for testing, or `:finch` to route requests at a dedicated Finch pool)
+  * `:lazy` - When `true`, skips the `SELECT 1` connection check during `init/1`. The transport starts immediately even if Snowflake is unreachable, and the first real query will surface any connectivity error. Defaults to `false`. Set this when hosting the repo under an intermediate supervisor that should isolate boot-time Snowflake failures from the rest of the application.
 
   ## Account Name Handling
 
@@ -152,7 +153,8 @@ defmodule Snowflex.Transport.Http do
       :connect_options,
       :req_options,
       :auth_token,
-      :auth_token_expires_at
+      :auth_token_expires_at,
+      lazy: false
     ]
 
     @type t :: %__MODULE__{
@@ -177,7 +179,8 @@ defmodule Snowflex.Transport.Http do
             connect_options: Keyword.t(),
             req_options: Keyword.t(),
             auth_token: String.t() | nil,
-            auth_token_expires_at: integer() | nil
+            auth_token_expires_at: integer() | nil,
+            lazy: boolean()
           }
   end
 
@@ -382,7 +385,7 @@ defmodule Snowflex.Transport.Http do
     with {:ok, validated_opts, private_key} <- validate_and_read_private_key(opts),
          {:ok, opts_with_fingerprint} <- resolve_fingerprint(validated_opts, private_key),
          {:ok, state} <- init_state(opts_with_fingerprint, private_key) do
-      check_connection(state)
+      maybe_check_connection(state)
     end
   end
 
@@ -753,7 +756,8 @@ defmodule Snowflex.Transport.Http do
        retry_base_delay: Keyword.get(validated_opts, :retry_base_delay, 1000),
        retry_max_delay: Keyword.get(validated_opts, :retry_max_delay, 8000),
        connect_options: Keyword.get(validated_opts, :connect_options, []),
-       req_options: validated_opts |> Keyword.get(:req_options, []) |> normalize_finch_option()
+       req_options: validated_opts |> Keyword.get(:req_options, []) |> normalize_finch_option(),
+       lazy: Keyword.get(validated_opts, :lazy, false)
      }
      |> then(&refresh_token(&1, &1.timeout))}
   end
@@ -809,6 +813,9 @@ defmodule Snowflex.Transport.Http do
         {:stop, error}
     end
   end
+
+  defp maybe_check_connection(%State{lazy: true} = state), do: {:ok, state}
+  defp maybe_check_connection(state), do: check_connection(state)
 
   # Token helpers
 
