@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-06
+
 ### Enhancements
 
-- `Snowflex.Transport.Http` now accepts a `:lazy` option. When set to `true`, the `SELECT 1` connection check that normally runs during `GenServer.init/1` is skipped, so the transport starts immediately even when Snowflake is unreachable at boot time. Connectivity errors surface on the first real query instead. This is useful when the repo is hosted under an intermediate supervisor designed to isolate Snowflake failures from the rest of the application. Defaults to `false` (existing behaviour unchanged).
+- `Snowflex.Transport.Http` now accepts a `:lazy` option. When set to `true`, the `SELECT 1` connection check that normally runs during `GenServer.init/1` is skipped, so the transport starts immediately even when Snowflake is unreachable at boot time. Connectivity errors surface on the first real query instead. This is useful when the repo is hosted under an intermediate supervisor designed to isolate Snowflake failures from the rest of the application. Defaults to `false` (existing behaviour unchanged). ([#192](https://github.com/pepsico-ecommerce/snowflex/pull/192))
+- `Snowflex.submit_async/4` accepts `:request_id` and `:retry` options for durable submission. `:request_id` is a caller-generated UUID string sent as the SQL API `requestId`; resubmitting with the same `:request_id` and `retry: true` lets Snowflake recognise the request instead of running the statement twice (see [Snowflake's resubmission contract](https://docs.snowflake.com/en/developer-guide/sql-api/submitting-requests#resubmitting-a-request-to-execute-sql-statements)). The `:request_id` is set on the returned `Snowflex.Result`, or on a returned `Snowflex.Error`'s `metadata`, so a caller can recover a submission whose response was lost. A malformed `:request_id`, a non-boolean `:retry`, or `retry: true` without a `:request_id` returns an error before anything is submitted. ([#204](https://github.com/pepsico-ecommerce/snowflex/pull/204))
+
+### Bug Fixes
+
+- `Snowflex.Transport.Http` no longer lets Req automatically retry the async submission POST, even when `req_options` configures `retry: :transient`. A transparent retry could submit the same statement twice; resubmission is now left to the caller, via `:request_id` and `:retry`. ([#204](https://github.com/pepsico-ecommerce/snowflex/pull/204))
 
 ## [1.7.2] - 2026-09-30
 
